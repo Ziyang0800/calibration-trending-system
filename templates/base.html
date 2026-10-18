@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Calibration Trending{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Obsidian & Titanium Atmosphere */
+    --bg: #f6f8fb;
+    --panel: #ffffff;
+    --panel-subtle: #f8fafc;
+    --panel-hover: #f1f5f9;
+    --track: #eef2f6;
+    
+    /* High-Definition Typography */
+    --ink: #0b1329;
+    --ink-dark: #1e293b;
+    --ink-muted: #475569;
+    --ink-faint: #64748b;
+    
+    /* Hairline Optical Lines */
+    --line: #e2e8f0;
+    --line-subtle: #edf2f7;
+    --line-focus: #3b82f6;
+    
+    /* Metrology Brand Tokens */
+    --primary: #0a192f;
+    --primary-accent: #2563eb;
+    --primary-light: #eff6ff;
+    
+    /* Semantic Status Tokens */
+    --ok: #059669;
+    --ok-bg: #ecfdf5;
+    --ok-border: #6ee7b7;
+    
+    --warn: #d97706;
+    --warn-bg: #fffbeb;
+    --warn-border: #fcd34d;
+
+    --reviewed: #1d4ed8;
+    --reviewed-bg: #eff6ff;
+    --reviewed-border: #93c5fd;
+    
+    --neutral-status: #475569;
+    --neutral-bg: #f8fafc;
+    --neutral-border: #cbd5e1;
+
+    /* Triple-Stop Elevation Depth */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+    --shadow-card: 0 0 0 1px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04), 0 6px 16px -2px rgba(15, 23, 42, 0.03);
+    --shadow-elevated: 0 0 0 1px rgba(15, 23, 42, 0.08), 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 16px 32px -4px rgba(15, 23, 42, 0.06);
+    --shadow-glow: 0 0 0 2px var(--primary-accent), 0 8px 20px -4px rgba(37, 99, 235, 0.18);
+
+    /* Animation Physics */
+    --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  * { box-sizing: border-box; }
+  
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .mono, .num-cell {
+    font-family: 'IBM Plex Mono', 'Consolas', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Frosted Glass Sticky Header */
+  header.site {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+    padding: 12px 28px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  }
+
+  .brand-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: var(--primary);
+    user-select: none;
+  }
+  .brand-group:hover .mark {
+    transform: rotate(90deg) scale(1.05);
+    background: var(--primary-accent);
+  }
+  .brand-group .mark {
+    width: 14px; height: 14px;
+    background: var(--primary);
+    border-radius: 3px;
+    display: inline-block;
+    transform: rotate(45deg);
+    transition: all 0.3s var(--ease-spring);
+  }
+  header.site h1 {
+    font-size: 15.5px;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -0.02em;
+    color: var(--primary);
+  }
+  header.site .breadcrumb-sep { color: var(--ink-faint); font-weight: 300; font-size: 13px; }
+  header.site .sub { color: var(--ink-muted); font-size: 13px; font-weight: 500; }
+  
+  .header-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  main { max-width: 1320px; margin: 0 auto; padding: 24px 28px; animation: page-enter 0.25s var(--ease-spring); }
+  @keyframes page-enter {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Studio Surface Panels */
+  .panel {
+    background: var(--panel);
+    border-radius: var(--radius-md);
+    padding: 20px 24px;
+    box-shadow: var(--shadow-card);
+    margin-bottom: 24px;
+    transition: box-shadow 0.2s var(--ease-spring);
+  }
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--line-subtle);
+  }
+  .panel-title {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--primary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    letter-spacing: -0.015em;
+  }
+
+  /* Optical Status Badges */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 9999px;
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .badge-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .badge-ok { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok-border); }
+  .badge-ok .badge-dot { background: var(--ok); }
+  
+  .badge-warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-border); }
+  .badge-warn .badge-dot { 
+    background: var(--warn);
+    box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.25);
+    animation: pulse-dot 2s infinite ease-in-out;
+  }
+
+  .badge-reviewed { background: var(--reviewed-bg); color: var(--reviewed); border: 1px solid var(--reviewed-border); }
+  .badge-reviewed .badge-dot { background: var(--reviewed); }
+
+  .badge-neutral { background: var(--neutral-bg); color: var(--neutral-status); border: 1px solid var(--neutral-border); }
+  .badge-neutral .badge-dot { background: var(--neutral-status); }
+
+  @keyframes pulse-dot {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.35); opacity: 0.7; }
+  }
+
+  /* Tactile Optical Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink-dark);
+    padding: 6px 13px;
+    font-size: 12.5px;
+    font-weight: 600;
+    font-family: inherit;
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s var(--ease-spring);
+    box-shadow: var(--shadow-sm);
+    user-select: none;
+  }
+  .btn:hover {
+    background: var(--panel-subtle);
+    border-color: #cbd5e1;
+    color: var(--primary-accent);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(15, 23, 42, 0.08);
+  }
+  .btn:active {
+    transform: translateY(0);
+    box-shadow: var(--shadow-sm);
+  }
+  .btn-primary {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #ffffff;
+  }
+  .btn-primary:hover {
+    background: #152744;
+    border-color: #152744;
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(10, 25, 47, 0.15);
+  }
+
+  .table-container {
+    background: var(--panel);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    box-shadow: var(--shadow-card);
+    margin-bottom: 24px;
+  }
+  .table-scroll { overflow-x: auto; max-width: 100%; }
+  table { width: 100%; border-collapse: collapse; text-align: left; }
+  thead th {
+    background: #f8fafc;
+    font-weight: 700;
+    font-size: 11px;
+    color: var(--ink-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 9.5px 14px;
+    border-bottom: 1px solid var(--line-subtle);
+    font-size: 13px;
+    vertical-align: middle;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--panel-hover); }
+  
+  th.num, td.num-cell.right { text-align: right; }
+  td.num-cell { font-size: 12.5px; }
+
+  table.sortable thead th[data-sort] { cursor: pointer; user-select: none; }
+  table.sortable thead th[data-sort]:hover { color: var(--primary-accent); }
+  .sort-indicator { font-size: 10px; margin-left: 4px; color: var(--primary-accent); }
+
+  input[type="text"], input[type="number"], input[type="date"], input[type="search"], select, textarea {
+    font-family: inherit;
+    font-size: 13px;
+    padding: 7px 11px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--panel);
+    color: var(--ink);
+    transition: all 0.15s ease;
+  }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--primary-accent);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  }
+</style>
+</head>
+<body>
+<header class="site">
+  <a href="{{ url_for('dashboard') }}" class="brand-group">
+    <span class="mark"></span>
+    <h1>Calibration Trending</h1>
+  </a>
+  {% block breadcrumb_suffix %}{% endblock %}
+  <div class="header-actions">
+    <a href="{{ url_for('import_form') }}" class="btn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+      Import Certificate
+    </a>
+    <a href="{{ url_for('htbasic_form') }}" class="btn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+      Cal. Factor Files
+    </a>
+  </div>
+</header>
+<main class="{% block mainclass %}{% endblock %}">
+{% block content %}{% endblock %}
+</main>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('table.sortable').forEach(table => {
+    const allHeaders = Array.from(table.querySelectorAll('thead th'));
+    allHeaders.forEach((th) => {
+      if (!th.dataset.sort) return;
+      th.addEventListener('click', () => {
+        const type = th.dataset.sort;
+        const idx = allHeaders.indexOf(th);
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const asc = th.dataset.dir !== 'asc';
+
+        allHeaders.forEach(h => { delete h.dataset.dir; h.querySelector('.sort-indicator')?.remove(); });
+        th.dataset.dir = asc ? 'asc' : 'desc';
+        const indicator = document.createElement('span');
+        indicator.className = 'sort-indicator';
+        indicator.textContent = asc ? ' ▲' : ' ▼';
+        th.appendChild(indicator);
+
+        rows.sort((a, b) => {
+          const cellA = a.children[idx], cellB = b.children[idx];
+          if (!cellA || !cellB) return 0;
+          let av = cellA.dataset.value !== undefined ? cellA.dataset.value : cellA.textContent.trim();
+          let bv = cellB.dataset.value !== undefined ? cellB.dataset.value : cellB.textContent.trim();
+          if (type === 'number') {
+            av = parseFloat(String(av).replace(/,/g, '')); if (isNaN(av)) av = -Infinity;
+            bv = parseFloat(String(bv).replace(/,/g, '')); if (isNaN(bv)) bv = -Infinity;
+          }
+          if (av < bv) return asc ? -1 : 1;
+          if (av > bv) return asc ? 1 : -1;
+          return 0;
+        });
+        rows.forEach(r => tbody.appendChild(r));
+      });
+    });
+  });
+});
+</script>
+</body>
+</html>

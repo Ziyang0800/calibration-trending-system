@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block subtitle %}Review Certificates{% endblock %}
+{% block content %}
+
+<div style="margin-bottom: 24px;">
+  <h2 style="font-size:24px; font-weight:700; margin:0 0 4px 0; color:var(--primary);">Review Certificate Ingestion</h2>
+  <p style="color:var(--ink-muted); margin:0; font-size:13.5px;">
+    {{ results|selectattr('ok')|list|length }} of {{ results|length }} certificate(s) opened successfully.
+    Verify the extracted numbers before writing to the database. Uncheck any file you wish to exclude.
+  </p>
+</div>
+
+<form action="{{ url_for('import_confirm') }}" method="post">
+<input type="hidden" name="row_count" value="{{ results|length }}">
+
+{% for r in results %}
+<div class="panel" style="margin-bottom:16px; {{ 'border-color:var(--warn);' if not r.ok }}">
+  {% if r.ok %}
+  <div style="display:flex; align-items:flex-start; gap:16px;">
+    <input type="checkbox" name="include_{{ loop.index0 }}" checked style="margin-top:6px;">
+    <div style="flex:1;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <span style="font-weight:600; font-size:14.5px; color:var(--primary);">{{ r.filename }}</span>
+        {% if r.cert_number %}
+        <span class="mono" style="font-size:12px; color:var(--ink-muted);">WO: {{ r.cert_number }}</span>
+        {% endif %}
+      </div>
+
+      {% if r.warnings %}
+      {% for w in r.warnings %}
+      <p style="color:var(--warn); font-size:12.5px; margin:2px 0;">⚠ {{ w }}</p>
+      {% endfor %}
+      {% endif %}
+
+      {% if r.needs_manual %}
+      <p style="color:var(--warn); font-size:12.5px; margin:4px 0 12px 0;">
+        ⚠ Fields highlighted in amber require manual entry.
+      </p>
+      {% endif %}
+
+      {% if r.asset %}
+      <div style="font-size:12.5px; color:var(--ink-muted); margin-bottom:12px;">
+        Matched: <strong>{{ r.asset.model or r.asset.serial }}</strong> · Equipment ID: {{ r.asset.asset_number or '—' }} · Nominal: {{ r.asset.nominal_ohms }} Ω
+      </div>
+      {% endif %}
+
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+        <label style="font-size:12px; font-weight:600;">Serial Number
+          <input type="text" name="serial_{{ loop.index0 }}" value="{{ r.serial }}" style="width:100%; margin-top:3px; {{ 'border-color:var(--warn); background:#fffbeb;' if 'serial' in r.needs_manual }}">
+        </label>
+        <label style="font-size:12px; font-weight:600;">Date of Calibration
+          <input type="date" name="cal_date_{{ loop.index0 }}" value="{{ r.cal_date }}" style="width:100%; margin-top:3px; {{ 'border-color:var(--warn); background:#fffbeb;' if 'cal_date' in r.needs_manual }}">
+        </label>
+        <label style="font-size:12px; font-weight:600;">Measured Value
+          <input type="text" name="measured_value_{{ loop.index0 }}" value="{{ r.measured_value if r.measured_value is not none else '' }}" style="width:100%; margin-top:3px; {{ 'border-color:var(--warn); background:#fffbeb;' if 'measured_value' in r.needs_manual }}">
+        </label>
+        <label style="font-size:12px; font-weight:600;">Uncertainty (Relative)
+          <input type="text" name="mu_relative_{{ loop.index0 }}" value="{{ r.mu_relative if r.mu_relative is not none else '' }}" style="width:100%; margin-top:3px; {{ 'border-color:var(--warn); background:#fffbeb;' if 'mu_relative' in r.needs_manual }}">
+        </label>
+      </div>
+    </div>
+  </div>
+  <input type="hidden" name="token_{{ loop.index0 }}" value="{{ r.token }}">
+  <input type="hidden" name="cert_number_{{ loop.index0 }}" value="{{ r.cert_number }}">
+  <input type="hidden" name="filename_{{ loop.index0 }}" value="{{ r.filename }}">
+  {% else %}
+  <p style="margin:0 0 4px 0; font-weight:600; color:var(--primary);">{{ r.filename }}</p>
+  <p style="color:var(--warn); margin:0; font-size:13px;">{{ r.error }}</p>
+  {% endif %}
+</div>
+{% endfor %}
+
+<div style="display:flex; gap:12px; margin-top:24px;">
+  <button class="btn btn-primary" type="submit" style="padding:8px 20px;">Confirm &amp; Import Selected</button>
+  <button class="btn" type="submit" formaction="{{ url_for('import_cancel') }}">Cancel All</button>
+</div>
+</form>
+
+{% endblock %}

@@ -1,0 +1,555 @@
+{% extends "base.html" %}
+{% block subtitle %}Fleet Overview{% endblock %}
+{% block content %}
+
+<style>
+  /* Telemetry KPI Cards with Top Accent Bars */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--panel);
+    border-radius: var(--radius-md);
+    padding: 18px 20px;
+    box-shadow: var(--shadow-card);
+    cursor: pointer;
+    transition: all 0.2s var(--ease-spring);
+    user-select: none;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: #cbd5e1;
+    transition: height 0.15s ease;
+  }
+  .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-elevated);
+  }
+  .stat-card:hover::before { height: 4px; }
+  .stat-card:active { transform: scale(0.985); }
+  .stat-card.selected {
+    box-shadow: var(--shadow-glow);
+  }
+  .stat-card[data-card-type="all"]::before { background: var(--primary); }
+  .stat-card[data-card-type="ok"]::before { background: var(--ok); }
+  .stat-card[data-card-type="out_of_trend"]::before { background: var(--warn); }
+  .stat-card[data-card-type="insufficient_data"]::before { background: #94a3b8; }
+
+  .stat-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .stat-card .label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-muted);
+    letter-spacing: -0.01em;
+  }
+  .stat-card-icon {
+    color: var(--ink-faint);
+  }
+  .stat-card .num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--primary);
+  }
+
+  /* Action Required Alert Banner */
+  .alert-banner {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: var(--radius-md);
+    padding: 12px 18px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: var(--shadow-card);
+    animation: fadeIn 0.25s ease;
+  }
+
+  /* Hardware Track Category Segmented Controller */
+  .category-strip-container {
+    background: var(--track);
+    padding: 4px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 16px;
+    border: 1px solid var(--line);
+  }
+  .category-tab-btn {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 7px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    transition: all 0.2s var(--ease-spring);
+    user-select: none;
+  }
+  .category-tab-btn svg { color: var(--ink-faint); transition: color 0.15s ease; }
+  .category-tab-btn:hover { color: var(--ink); background: rgba(255, 255, 255, 0.6); }
+  .category-tab-btn.active {
+    background: #ffffff;
+    color: var(--primary);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+  .category-tab-btn.active svg { color: var(--primary-accent); }
+  .category-pill-count {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 9999px;
+    background: #f1f5f9;
+    color: var(--ink-muted);
+  }
+  .category-tab-btn.active .category-pill-count {
+    background: var(--primary-light);
+    color: var(--primary-accent);
+  }
+
+  /* Secondary Toolbar: Set Tabs & Search */
+  .toolbar-container {
+    background: var(--panel);
+    border-radius: var(--radius-md);
+    padding: 12px 18px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow-card);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .set-pills-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .set-pill-btn {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink-muted);
+    padding: 4px 12px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s var(--ease-spring);
+    user-select: none;
+  }
+  .set-pill-btn:hover, .set-pill-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+
+  .search-input-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 240px;
+    max-width: 340px;
+  }
+  .search-input-wrap svg {
+    position: absolute;
+    left: 11px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-faint);
+  }
+  .search-input-wrap input {
+    width: 100%;
+    padding-left: 34px;
+    background: var(--panel-subtle);
+  }
+  .search-input-wrap input:focus { background: #ffffff; }
+
+  /* Master Fleet Table Columns & Optical Alignment */
+  .fleet-table th:nth-child(1) { width: 34px; }
+  .fleet-table th:nth-child(2) { width: 115px; }
+  .fleet-table th:nth-child(3) { width: 130px; }
+  .fleet-table th:nth-child(4) { width: 110px; }
+  .fleet-table th:nth-child(5) { width: 130px; }
+  .fleet-table th:nth-child(6) { width: 75px; text-align: center; }
+  .fleet-table th:nth-child(7) { width: 135px; }
+  .fleet-table th:nth-child(8) { width: 70px; }
+  .fleet-table th:nth-child(9) { width: 105px; }
+  .fleet-table th:nth-child(10) { width: 140px; }
+  .fleet-table th:nth-child(11) { width: 130px; }
+
+  tr.fleet-row { cursor: pointer; transition: background 0.1s ease; }
+  tr.fleet-row:hover td { background: var(--panel-hover); }
+  tr.fleet-row.is-out-of-trend td { background: rgba(254, 243, 199, 0.45); }
+  tr.fleet-row.is-out-of-trend td:first-child { border-left: 3px solid var(--warn); }
+  tr.fleet-row.is-reviewed td { background: rgba(239, 246, 255, 0.5); }
+  tr.fleet-row.is-reviewed td:first-child { border-left: 3px solid var(--reviewed); }
+
+  /* Spring Floating Action Drawer */
+  .floating-drawer {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(140%);
+    background: var(--primary);
+    color: white;
+    padding: 10px 22px;
+    border-radius: 9999px;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    z-index: 50;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .floating-drawer.visible { transform: translateX(-50%) translateY(0); }
+
+  .empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    background: var(--panel);
+    border: 1px dashed var(--line);
+    border-radius: var(--radius-md);
+    margin: 20px 0;
+  }
+</style>
+
+<!-- Action Required Alert Banner -->
+{% if out_count > 0 %}
+<div class="alert-banner" id="alertBanner">
+  <div style="display:flex; align-items:center; gap:10px;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+    <span style="font-size:13.5px; font-weight:600; color:#92400e;">
+      Attention Required: {{ out_count }} standard(s) outside 95% prediction interval awaiting review.
+    </span>
+  </div>
+  <button class="btn" style="background:#ffffff; color:#92400e; border-color:#fcd34d; padding:4px 12px; font-size:12px;" onclick="setStatusFilter('out_of_trend', document.querySelector('.stat-card[data-card-type=\'out_of_trend\']'))">
+    Isolate Alert(s)
+  </button>
+</div>
+{% endif %}
+
+<!-- Telemetry Metric Cards -->
+<div class="stat-grid">
+  <div class="stat-card selected" onclick="setStatusFilter('all', this)" id="stat-all" data-card-type="all">
+    <div class="stat-card-header">
+      <div class="label">Total Standards Tracked</div>
+      <div class="stat-card-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg></div>
+    </div>
+    <div class="num">{{ total }}</div>
+  </div>
+
+  <div class="stat-card" onclick="setStatusFilter('ok', this)" data-card-type="ok">
+    <div class="stat-card-header">
+      <div class="label">Within Trend</div>
+      <div class="stat-card-icon" style="color:var(--ok);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><polyline points="9 12 11 14 15 10"></polyline></svg></div>
+    </div>
+    <div class="num" style="color:var(--ok);">{{ ok_count }}</div>
+  </div>
+
+  <div class="stat-card" onclick="setStatusFilter('out_of_trend', this)" data-card-type="out_of_trend">
+    <div class="stat-card-header">
+      <div class="label">Out of Trend (Unreviewed)</div>
+      <div class="stat-card-icon" style="color:var(--warn);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg></div>
+    </div>
+    <div class="num" style="color:var(--warn);">{{ out_count }}</div>
+  </div>
+
+  <div class="stat-card" onclick="setStatusFilter('insufficient_data', this)" data-card-type="insufficient_data">
+    <div class="stat-card-header">
+      <div class="label">Insufficient History</div>
+      <div class="stat-card-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div>
+    </div>
+    <div class="num" style="color:var(--neutral-status);">{{ insufficient_count }}</div>
+  </div>
+</div>
+
+<!-- Hardware Track Category Segmented Controller -->
+<div class="category-strip-container">
+  <button type="button" class="category-tab-btn active" onclick="filterByCategory('all', this)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+    <span>All Standards</span>
+    <span class="category-pill-count">{{ total }}</span>
+  </button>
+  <button type="button" class="category-tab-btn" onclick="filterByCategory('standard_resistor', this)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="10" rx="2"></rect><line x1="6" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="18" y2="12"></line></svg>
+    <span>Resistors</span>
+    <span class="category-pill-count">23</span>
+  </button>
+  <button type="button" class="category-tab-btn" onclick="filterByCategory('dcv_reference', this)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+    <span>DC Voltage Reference</span>
+    <span class="category-pill-count">3</span>
+  </button>
+  <button type="button" class="category-tab-btn" onclick="filterByCategory('ac_divider', this)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line><line x1="12" y1="8" x2="12" y2="8"></line><line x1="12" y1="16" x2="12" y2="16"></line></svg>
+    <span>AC Dividers</span>
+    <span class="category-pill-count">4</span>
+  </button>
+  <button type="button" class="category-tab-btn" onclick="filterByCategory('waveform_generator', this)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h5l3-7 4 14 3-7h5"></path></svg>
+    <span>Waveform Generators</span>
+    <span class="category-pill-count">3</span>
+  </button>
+</div>
+
+<!-- Secondary Toolbar: Set Pills & Search -->
+<div class="toolbar-container">
+  <div class="set-pills-group">
+    <span style="font-size:12px; font-weight:600; color:var(--ink-muted); margin-right:4px;">Set Filter:</span>
+    <button class="set-pill-btn active" onclick="filterBySet('all', this)">All Sets</button>
+    {% for s in sets %}
+    <button class="set-pill-btn" onclick="filterBySet('{{ s.set_id }}', this)">{{ s.set_id }}</button>
+    {% endfor %}
+  </div>
+
+  <div class="search-input-wrap">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+    <input type="search" id="assetSearch" placeholder="Search serial, model, equipment ID..." oninput="handleSearch()">
+  </div>
+</div>
+
+<!-- Empty State Display -->
+<div class="empty-state" id="emptyState" style="display:none;">
+  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+  <p style="color:var(--ink-muted); font-size:13.5px; margin:0 0 16px 0;">No calibration standards match the active filter criteria.</p>
+  <button class="btn btn-primary" onclick="resetAllFilters()">Reset All Filters</button>
+</div>
+
+<!-- Master Fleet Data Table -->
+<form method="post" action="{{ url_for('report_generate') }}" id="report-form">
+  <div class="table-container" id="masterTableContainer">
+    <div class="table-scroll">
+      <table class="sortable fleet-table">
+        <thead>
+          <tr>
+            <th><input type="checkbox" onclick="toggleAllCheckboxes(this)"></th>
+            <th data-sort="text">Serial</th>
+            <th data-sort="text">Model</th>
+            <th data-sort="text">Equipment ID</th>
+            <th class="num" data-sort="number">Nominal / Type</th>
+            <th style="text-align:center;" data-sort="text">Set</th>
+            <th data-sort="text">Category</th>
+            <th class="num" data-sort="number"># Cals</th>
+            <th data-sort="text">Last Cal</th>
+            <th class="num" data-sort="number">Last Measured</th>
+            <th data-sort="text">Status</th>
+          </tr>
+        </thead>
+        <tbody id="fleetTableBody">
+          {% for s in sets %}
+            {% for a in s.assets %}
+            <tr class="fleet-row {{ 'is-out-of-trend' if a.status == 'out_of_trend' else ('is-reviewed' if a.status == 'reviewed_out_of_trend' else '') }}"
+                data-status="{{ a.status }}"
+                data-set="{{ s.set_id }}"
+                data-category="{{ a.category or 'standard_resistor' }}"
+                data-search="{{ (a.serial ~ ' ' ~ (a.model or '') ~ ' ' ~ (a.asset_number or '') ~ ' ' ~ (a.source_sheet or ''))|lower }}"
+                onclick="if(!event.target.closest('input')) window.location='{{ url_for('asset_detail', asset_id=a.id) }}'">
+              
+              <td onclick="event.stopPropagation()">
+                <input class="asset-check" type="checkbox" name="asset_ids" value="{{ a.id }}" onchange="updateDrawer()">
+              </td>
+              <td class="num-cell" style="font-weight:700; color:var(--primary-accent);">{{ a.serial }}</td>
+              <td style="font-weight:600;">{{ a.model or '—' }}</td>
+              <td class="num-cell" style="color:var(--ink-muted);">{{ a.asset_number or '—' }}</td>
+              
+              <!-- Nominal / Type Format -->
+              <td class="num-cell right" data-value="{{ a.nominal_ohms }}">
+                {% if a.category == 'dcv_reference' %}
+                  10.0 V
+                {% elif a.category == 'ac_divider' %}
+                  {{ '100:1' if '10mV' in (a.model or '') else '10:1' }} Ratio
+                {% elif a.category == 'waveform_generator' %}
+                  15 Points (dB)
+                {% else %}
+                  {{ a.nominal_ohms | ohms }} Ω
+                {% endif %}
+              </td>
+
+              <!-- Set Badge -->
+              <td style="text-align:center;">
+                <span class="badge badge-neutral" style="font-size:11px; padding:2px 8px;">{{ s.set_id }}</span>
+              </td>
+
+              <!-- Category -->
+              <td style="color:var(--ink-muted); font-size:12px;">
+                {% if a.category == 'dcv_reference' %}
+                  DC Voltage Ref
+                {% elif a.category == 'ac_divider' %}
+                  AC Voltage Divider
+                {% elif a.category == 'waveform_generator' %}
+                  Waveform Generator
+                {% else %}
+                  {{ a.source_sheet or 'Resistor Decade' }}
+                {% endif %}
+              </td>
+
+              <td class="num-cell right">{{ a.num_calibrations }}</td>
+              <td class="num-cell">{{ a.last_cal_date or '—' }}</td>
+              
+              <!-- Last Measured -->
+              <td class="num-cell right" data-value="{{ a.last_measured if a.last_measured is not none else '' }}">
+                {% if a.last_measured is none %}
+                  —
+                {% elif a.category == 'dcv_reference' %}
+                  {{ '%.8f'|format(a.last_measured) }} V
+                {% elif a.category == 'ac_divider' %}
+                  {{ '%.5f'|format(a.last_measured) }}
+                {% elif a.category == 'waveform_generator' %}
+                  {{ '%+.4f'|format(a.last_measured) }} dB
+                {% else %}
+                  {{ a.last_measured | measured(a.nominal_ohms) }}
+                {% endif %}
+              </td>
+
+              <!-- Status Badge -->
+              <td>
+                {% if a.status == 'ok' %}
+                <span class="badge badge-ok"><span class="badge-dot"></span>In Trend</span>
+                {% elif a.status == 'reviewed_out_of_trend' %}
+                <span class="badge badge-reviewed"><span class="badge-dot"></span>Reviewed</span>
+                {% elif a.status == 'out_of_trend' %}
+                <span class="badge badge-warn"><span class="badge-dot"></span>Out of Trend</span>
+                {% else %}
+                <span class="badge badge-neutral"><span class="badge-dot"></span>Insufficient</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Floating Action Drawer -->
+  <div class="floating-drawer" id="floatingDrawer">
+    <span style="font-size:12.5px; font-weight:500;">
+      <span id="selectedCount" class="mono">0</span> standards selected
+    </span>
+    <button class="btn btn-primary" type="submit" style="padding:4px 14px; font-size:12px;">Generate PDF Report</button>
+    <button class="btn" type="button" onclick="clearAllSelections()" style="background:transparent; color:#fff; border-color:rgba(255,255,255,0.25); padding:4px 10px; font-size:12px;">Clear</button>
+  </div>
+</form>
+
+<script>
+let currentStatusFilter = 'all';
+let currentCategoryFilter = 'all';
+let currentSetFilter = 'all';
+let searchQuery = '';
+
+function setStatusFilter(status, el) {
+  currentStatusFilter = status;
+  document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('selected'));
+  if (el) el.classList.add('selected');
+  applyFilters();
+}
+
+function filterByCategory(cat, btn) {
+  currentCategoryFilter = cat;
+  document.querySelectorAll('.category-tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+}
+
+function filterBySet(setName, btn) {
+  currentSetFilter = setName;
+  document.querySelectorAll('.set-pill-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+}
+
+function handleSearch() {
+  searchQuery = document.getElementById('assetSearch').value.trim().toLowerCase();
+  applyFilters();
+}
+
+function resetAllFilters() {
+  currentStatusFilter = 'all';
+  currentCategoryFilter = 'all';
+  currentSetFilter = 'all';
+  searchQuery = '';
+  document.getElementById('assetSearch').value = '';
+  document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('selected'));
+  document.getElementById('stat-all').classList.add('selected');
+  document.querySelectorAll('.category-tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('.category-tab-btn').classList.add('active');
+  document.querySelectorAll('.set-pill-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('.set-pill-btn').classList.add('active');
+  applyFilters();
+}
+
+function applyFilters() {
+  let visibleCount = 0;
+  const rows = document.querySelectorAll('.fleet-row');
+
+  rows.forEach(row => {
+    const rowStatus = row.dataset.status;
+    const rowSet = row.dataset.set;
+    const rowCategory = row.dataset.category;
+    const rowSearchText = row.dataset.search;
+
+    const matchesSet = (currentSetFilter === 'all' || currentSetFilter === rowSet);
+    const matchesStatus = (currentStatusFilter === 'all' || currentStatusFilter === rowStatus);
+    const matchesCategory = (currentCategoryFilter === 'all' || currentCategoryFilter === rowCategory);
+    const matchesQuery = (!searchQuery || rowSearchText.includes(searchQuery));
+
+    const visible = matchesSet && matchesStatus && matchesCategory && matchesQuery;
+    row.style.display = visible ? '' : 'none';
+    if (visible) visibleCount++;
+  });
+
+  const emptyState = document.getElementById('emptyState');
+  const tableContainer = document.getElementById('masterTableContainer');
+  emptyState.style.display = (visibleCount === 0) ? 'block' : 'none';
+  tableContainer.style.display = (visibleCount === 0) ? 'none' : 'block';
+}
+
+function updateDrawer() {
+  const checked = document.querySelectorAll('.asset-check:checked');
+  const count = checked.length;
+  document.getElementById('selectedCount').textContent = count;
+  const drawer = document.getElementById('floatingDrawer');
+  drawer.classList.toggle('visible', count > 0);
+}
+
+function clearAllSelections() {
+  document.querySelectorAll('.asset-check').forEach(cb => cb.checked = false);
+  updateDrawer();
+}
+
+function toggleAllCheckboxes(masterCb) {
+  document.querySelectorAll('.fleet-row').forEach(row => {
+    if (row.style.display !== 'none') {
+      const cb = row.querySelector('.asset-check');
+      if (cb) cb.checked = masterCb.checked;
+    }
+  });
+  updateDrawer();
+}
+</script>
+
+{% endblock %}

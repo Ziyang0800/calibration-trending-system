@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.log
+
+# User Data / Temp Folders
+pending_imports/
+exports/
+reports/
+
+# Node.js / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+.pnp
+.pnp.js
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

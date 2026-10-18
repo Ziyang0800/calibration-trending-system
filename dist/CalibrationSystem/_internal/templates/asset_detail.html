@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block subtitle %}{{ asset.serial }}{% endblock %}
+{% block content %}
+
+<h2>{{ asset.model or asset.serial }}</h2>
+<p style="color:var(--ink-dim); margin-top:0;">
+  {{ asset.source_sheet }}
+  &nbsp;·&nbsp; <a href="{{ url_for('asset_edit', asset_id=asset.id) }}">Edit</a>
+</p>
+
+<div class="panel">
+  <dl class="identity">
+    <dt>Serial</dt><dd>{{ asset.serial }}</dd>
+    <dt>PN / EQ</dt><dd>{{ asset.asset_number or '—' }}</dd>
+    <dt>Nominal</dt><dd>{{ asset.nominal_ohms }} Ω</dd>
+    <dt>Source</dt><dd>{{ asset.source_workbook }} / {{ asset.source_sheet }}</dd>
+    {% if trend %}
+    <dt>Regression n</dt><dd>{{ trend.n }} (excludes newest calibration)</dd>
+    <dt>Slope</dt><dd>{{ '%.6e'|format(trend.slope) }} Ω/day</dd>
+    <dt>Syx</dt><dd>{{ '%.6e'|format(trend.Syx) }}</dd>
+    {% endif %}
+  </dl>
+</div>
+
+{% if trend %}
+<h3>Trend</h3>
+<div class="panel">
+  <canvas id="trendChart" height="100"></canvas>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+const cals = {{ calibrations | tojson }};
+const measured = cals.map(c => ({x: c.accumulated_days, y: c.measured_value}));
+const predicted = cals.map(c => ({x: c.accumulated_days, y: c.predicted}));
+const lower = cals.map(c => ({x: c.accumulated_days, y: c.lower}));
+const upper = cals.map(c => ({x: c.accumulated_days, y: c.upper}));
+
+function pointColor(c) {
+  if (c.excluded_from_regression) return '#9a9186';  // grey - reviewer-excluded outlier
+  if (c.out_of_trend) return '#b4530f';               // amber - genuinely out of trend
+  return '#2f5f7a';                                    // steel blue - normal
+}
+
+new Chart(document.getElementById('trendChart'), {
+  type: 'scatter',
+  data: {
+    datasets: [
+      {
+        label: 'Upper bound', data: upper, showLine: true, borderColor: '#dcdcd5',
+        backgroundColor: 'rgba(47,95,122,0.06)', fill: '+1', pointRadius: 0, borderWidth: 1, order: 3,
+      },
+      {
+        label: 'Lower bound', data: lower, showLine: true, borderColor: '#dcdcd5',
+        pointRadius: 0, borderWidth: 1, order: 3,
+      },
+      {
+        label: 'Prediction', data: predicted, showLine: true, borderColor: '#5c6773',
+        borderDash: [5, 4], pointRadius: 0, borderWidth: 1.5, order: 2,
+      },
+      {
+        label: 'Measured', data: measured, showLine: false,
+        backgroundColor: cals.map(pointColor),
+        pointStyle: cals.map(c => c.excluded_from_regression ? 'crossRot' : 'circle'),
+        pointRadius: 5, order: 1,
+      },
+    ],
+  },
+  options: {
+    scales: {
+      x: { title: { display: true, text: 'Accumulated days' } },
+      y: { title: { display: true, text: 'Measured value (Ω)' }, ticks: { callback: v => v.toFixed(9) } },
+    },
+    plugins: { legend: { position: 'bottom' } },
+  },
+});
+</script>
+<p style="color:var(--ink-dim); font-size:13px;">
+  Amber points are genuinely out of trend (measured value fell outside its own
+  predicted range). Grey × markers are reviewer-excluded outliers, left out of
+  the regression fit entirely. The newest calibration is always evaluated
+  against — but excluded from — the fit, so it reflects whether the latest
+  result matched what prior trend would have predicted.
+</p>
+{% else %}
+<p style="color:var(--ink-dim);">Not enough calibration history yet for a trend
+  (need at least 4 points; this asset has {{ calibrations|length }}).</p>
+{% endif %}
+
+<h3>Calibration history</h3>
+<div class="panel">
+  <table class="sortable">
+    <thead><tr>
+      <th data-sort="text">Date</th>
+      <th data-sort="number">Measured</th>
+      <th data-sort="number">MU (Ω)</th>
+      <th data-sort="number">Error (µΩ/Ω)</th>
+      <th data-sort="number">Drift (µΩ/Ω)</th>
+      <th data-sort="number">Predicted</th>
+      <th data-sort="number">Lower</th>
+      <th data-sort="number">Upper</th>
+      <th data-sort="text">Status</th>
+      <th data-sort="text">Source</th>
+      <th>Cert</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+      {% for c in calibrations|reverse %}
+      <tr class="{{ 'row-out-of-trend' if c.out_of_trend else '' }} {{ 'row-excluded' if c.excluded_from_regression else '' }}">
+        <td class="num-cell">{{ c.date }}</td>
+        <td class="num-cell" data-value="{{ c.measured_value }}">{{ c.measured_value | measured(asset.nominal_ohms) }}</td>
+        <td class="num-cell" data-value="{{ c.mu_relative * asset.nominal_ohms }}">{{ '%.2e'|format(c.mu_relative * asset.nominal_ohms) }}</td>
+        <td class="num-cell" data-value="{{ c.error_ppm if c.error_ppm is defined else '' }}">{{ '%.2f'|format(c.error_ppm) if c.error_ppm is defined else '—' }}</td>
+        <td class="num-cell" data-value="{{ c.drift_ppm if c.drift_ppm is not none else '' }}">{{ '%.2f'|format(c.drift_ppm) if c.drift_ppm is not none else '—' }}</td>
+        <td class="num-cell" data-value="{{ c.predicted if c.predicted is defined else '' }}">{{ c.predicted | measured(asset.nominal_ohms) if c.predicted is defined else '—' }}</td>
+        <td class="num-cell" data-value="{{ c.lower if c.lower is defined else '' }}">{{ c.lower | measured(asset.nominal_ohms) if c.lower is defined else '—' }}</td>
+        <td class="num-cell" data-value="{{ c.upper if c.upper is defined else '' }}">{{ c.upper | measured(asset.nominal_ohms) if c.upper is defined else '—' }}</td>
+        <td>
+          {% if c.excluded_from_regression %}<span class="status-insufficient_data">excluded</span>
+          {% elif c.out_of_trend %}<span class="status-out_of_trend">out of trend</span>
+          {% elif c.in_fit is defined %}<span class="status-ok">ok</span>
+          {% endif %}
+          {% if c.reviewer_comment or c.reviewer_attachment_path %}
+          <br><a href="{{ url_for('calibration_comment', calibration_id=c.id) }}" target="_blank" rel="noopener">show note</a>
+          {% endif %}
+        </td>
+        <td>{{ c.source.replace('_', ' ') }}</td>
+        <td>
+          {% if c.cert_pdf_path %}
+            <a href="{{ url_for('view_certificate', calibration_id=c.id) }}" target="_blank">view</a>
+          {% else %}—{% endif %}
+        </td>
+        <td><a href="{{ url_for('calibration_edit', calibration_id=c.id) }}">edit</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h3>Export</h3>
+<a class="btn" href="{{ url_for('export_asset', asset_id=asset.id) }}">Download this asset as Excel</a>
+
+{% endblock %}

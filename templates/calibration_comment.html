@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block subtitle %}Reviewer Note{% endblock %}
+{% block content %}
+
+<div style="max-width: 600px; margin: 0 auto;">
+  <div style="margin-bottom: 20px;">
+    <h2 style="font-size:22px; font-weight:700; margin:0 0 4px 0; color:var(--primary);">Reviewer Quality Note</h2>
+    <p style="color:var(--ink-muted); margin:0; font-size:13.5px;">
+      {{ asset.model or asset.serial if asset else 'Standard' }} · Calibration Dated <strong>{{ cal.cal_date }}</strong>
+    </p>
+  </div>
+
+  <div class="panel">
+    {% if cal.reviewer_comment %}
+    <p style="font-size:14px; line-height:1.65; white-space:pre-wrap; color:var(--ink); margin:0 0 16px 0;">{{ cal.reviewer_comment }}</p>
+    {% else %}
+    <p style="color:var(--ink-muted); font-size:13.5px;">No comment text recorded for this calibration event.</p>
+    {% endif %}
+
+    {% if cal.location or cal.pressure_hpa %}
+    <div style="margin-top:16px; padding:10px 14px; background:var(--panel-subtle); border-radius:var(--radius-sm); font-size:12.5px; color:var(--ink-muted);">
+      {% if cal.location %}Facility: <strong>{{ cal.location }}</strong>{% endif %}
+      {% if cal.location and cal.pressure_hpa %} &nbsp;·&nbsp; {% endif %}
+      {% if cal.pressure_hpa %}Ambient Pressure: <strong>{{ cal.pressure_hpa|int }} hPa</strong>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if cal.reviewer_attachment_path %}
+    <div style="margin-top:20px; padding-top:16px; border-top:1px dashed var(--line);">
+      <h4 style="font-size:13px; font-weight:600; color:var(--ink); margin:0 0 8px 0;">Attached Quality Report</h4>
+      <a class="btn btn-primary" href="{{ url_for('view_attachment', calibration_id=cal.id) }}" target="_blank">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        Open {{ cal.reviewer_attachment_path | basename }}
+      </a>
+    </div>
+    {% endif %}
+
+    <div style="margin-top:24px; padding-top:16px; border-top:1px solid var(--line);">
+      <a class="btn" href="{{ url_for('asset_detail', asset_id=cal.asset_id) }}">Return to Asset Detail</a>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

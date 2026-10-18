@@ -1,0 +1,820 @@
+{% extends "base.html" %}
+{% block subtitle %}{{ asset.serial }}{% endblock %}
+
+{% block breadcrumb_suffix %}
+<span class="breadcrumb-sep">/</span>
+<span class="sub">{{ asset.set_id or 'Standards' }}</span>
+<span class="breadcrumb-sep">/</span>
+<span class="sub" style="color:var(--ink); font-weight:600;">{{ asset.model or asset.serial }}</span>
+{% endblock %}
+
+{% block content %}
+
+<style>
+  /* Command Hero Banner */
+  .hero-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 20px 24px;
+    box-shadow: var(--shadow-card);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .hero-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .asset-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-sm);
+    background: var(--primary-light);
+    color: var(--primary-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #bfdbfe;
+    flex-shrink: 0;
+  }
+  .hero-title-group h2 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0 0 4px 0;
+    color: var(--primary);
+  }
+  .hero-meta-chips {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--ink-muted);
+    flex-wrap: wrap;
+  }
+  .copy-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    background: var(--panel-subtle);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--ink-dark);
+  }
+  .copy-chip:hover {
+    border-color: var(--primary-accent);
+    color: var(--primary-accent);
+    background: #ffffff;
+  }
+
+  /* Multi-Point Characterization Matrix */
+  .matrix-table tr.is-active td {
+    background: #eff6ff !important;
+    font-weight: 600;
+  }
+  .matrix-table tr.is-active td:first-child {
+    border-left: 3px solid var(--primary-accent);
+  }
+
+  /* High-Contrast Metrology Acceptance Limit Chip */
+  .limit-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #f8fafc;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: var(--ink-dark);
+    font-weight: 600;
+  }
+  .limit-sep {
+    color: var(--ink-faint);
+    font-weight: 400;
+    font-size: 10px;
+  }
+
+  /* Compact Zero-Overflow History Table with Sticky Header */
+  .table-sticky-container {
+    max-height: 520px;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--panel);
+    box-shadow: var(--shadow-card);
+  }
+  .compact-history-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .compact-history-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #f8fafc;
+    box-shadow: 0 1px 0 var(--line);
+    padding: 9.5px 12px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .compact-history-table tbody td {
+    padding: 8.5px 12px;
+    font-size: 12.5px;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line-subtle);
+  }
+
+  /* Inline Reviewer Note Popover Modal */
+  .note-modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .note-modal-overlay.open { display: flex; }
+  .note-modal-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    width: 480px;
+    max-width: 90vw;
+    box-shadow: var(--shadow-lg);
+    padding: 24px;
+    animation: modal-pop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes modal-pop {
+    0% { transform: scale(0.96); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+</style>
+
+<!-- Command Hero Banner -->
+<div class="hero-card">
+  <div class="hero-left">
+    <div class="asset-avatar">
+      {% if asset.category == 'waveform_generator' %}
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h5l3-7 4 14 3-7h5"></path></svg>
+      {% elif asset.category == 'dcv_reference' %}
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+      {% elif asset.category == 'ac_divider' %}
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="8" y1="12" x2="16" y2="12"></line><line x1="12" y1="8" x2="12" y2="8"></line><line x1="12" y1="16" x2="12" y2="16"></line></svg>
+      {% else %}
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="10" rx="2"></rect><line x1="6" y1="12" x2="6" y2="12"></line><line x1="18" y1="12" x2="18" y2="12"></line></svg>
+      {% endif %}
+    </div>
+    <div class="hero-title-group">
+      <h2>{{ asset.model or asset.serial }}</h2>
+      <div class="hero-meta-chips">
+        <span>Equipment ID: <strong>{{ asset.asset_number or '—' }}</strong></span>
+        <span>·</span>
+        <span>Serial: 
+          <span class="copy-chip" onclick="copySerial('{{ asset.serial }}', this)" title="Click to copy serial">
+            <strong>{{ asset.serial }}</strong>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          </span>
+        </span>
+        <span>·</span>
+        <span>Category: 
+          <strong>
+            {% if asset.category == 'dcv_reference' %}DC Voltage Reference
+            {% elif asset.category == 'ac_divider' %}AC Voltage Divider
+            {% elif asset.category == 'waveform_generator' %}Waveform Generator
+            {% else %}Standard Resistor{% endif %}
+          </strong>
+        </span>
+        <span>·</span>
+        <span>Set: <strong>{{ asset.set_id or 'Unassigned' }}</strong></span>
+      </div>
+    </div>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <a class="btn" href="{{ url_for('export_asset', asset_id=asset.id) }}">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      Export Excel
+    </a>
+    <a class="btn" href="{{ url_for('asset_edit', asset_id=asset.id) }}">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+      Edit Asset
+    </a>
+  </div>
+</div>
+
+<!-- MULTI-POINT SUMMARY MATRIX (AT A GLANCE) -->
+{% if test_points and test_points|length > 1 %}
+<div class="panel" style="margin-bottom:20px;">
+  <div class="panel-header" style="margin-bottom:12px;">
+    <h3 class="panel-title">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+      Multi-Point Characterization Matrix ({{ test_points|length }} Test Points)
+    </h3>
+    <span style="font-size:12px; color:var(--ink-muted);">Click any row to switch active curve below</span>
+  </div>
+  <div class="table-scroll">
+    <table class="matrix-table">
+      <thead>
+        <tr>
+          <th>Test Point</th>
+          <th>Classification</th>
+          <th class="num">Latest Calibrated Value</th>
+          <th class="num">Drift Since Prior Cal</th>
+          <th>Latest Cal Date</th>
+          <th>Trend Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tp in test_points %}
+        <tr class="{{ 'is-active' if tp.id == active_test_point_id else '' }}"
+            style="cursor:pointer;"
+            onclick="window.location='{{ url_for('asset_detail', asset_id=asset.id) }}?tp={{ tp.id }}'">
+          <td>
+            <span style="{{ 'color:var(--primary-accent); font-weight:700;' if tp.id == active_test_point_id else '' }}">
+              {{ tp.point_name }}
+            </span>
+          </td>
+          <td style="color:var(--ink-muted); font-size:12px;">{{ tp.group_name }}</td>
+          <td class="num-cell right">
+            {% if tp.latest_value is not none %}
+              {% if asset.unit == 'dB' %}{{ '%+.5f'|format(tp.latest_value) }} dB
+              {% elif asset.unit == 'Ratio' %}{{ '%.5f'|format(tp.latest_value) }}
+              {% else %}{{ '%.8f'|format(tp.latest_value) }} {{ tp.unit }}{% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td class="num-cell right">
+            {% if tp.drift is not none %}
+              <span style="color:var(--primary); font-weight:600;">
+                {% if asset.unit == 'dB' %}{{ '%+.4f'|format(tp.drift) }} dB
+                {% elif asset.unit == 'Ratio' and tp.nominal_value and tp.nominal_value != 0 %}{{ '%+.2f'|format(tp.drift / tp.nominal_value * 1e6) }} ppm
+                {% else %}{{ '%+.2f'|format(tp.drift) }}{% endif %}
+              </span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="num-cell">{{ tp.latest_date or '—' }}</td>
+          <td>
+            {% if tp.status == 'ok' %}
+            <span class="badge badge-ok"><span class="badge-dot"></span>In Trend</span>
+            {% elif tp.status == 'reviewed_out_of_trend' %}
+            <span class="badge badge-reviewed"><span class="badge-dot"></span>Reviewed</span>
+            {% elif tp.status == 'out_of_trend' %}
+            <span class="badge badge-warn"><span class="badge-dot"></span>Out of Trend</span>
+            {% else %}
+            <span class="badge badge-neutral"><span class="badge-dot"></span>Baseline</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('asset_detail', asset_id=asset.id) }}?tp={{ tp.id }}" 
+               class="btn {{ 'btn-primary' if tp.id == active_test_point_id else '' }}"
+               style="padding:2px 10px; font-size:11px;">
+              {{ 'Active' if tp.id == active_test_point_id else 'View Trend' }}
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- 2-Column Info & Active Point Specs -->
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:24px;">
+  
+  <div class="panel" style="margin-bottom:0;">
+    <div class="panel-header">
+      <h3 class="panel-title">Active Test Series</h3>
+      <span class="badge badge-neutral">
+        {{ active_test_point.point_name if active_test_point else (asset.nominal_ohms | ohms ~ ' Ω') }}
+      </span>
+    </div>
+    <div style="display:grid; grid-template-columns: auto 1fr; gap:8px 24px; font-size:13px;">
+      <span style="color:var(--ink-muted);">Series Classification:</span>
+      <span class="mono">{{ active_test_point.group_name if active_test_point else asset.source_sheet }}</span>
+
+      <span style="color:var(--ink-muted);">Calibration History:</span>
+      <span><strong>{{ calibrations|length }}</strong> calibration points recorded</span>
+
+      {% if trend %}
+      <span style="color:var(--ink-muted);">Regression Fit:</span>
+      <span>
+        n = {{ trend.n }}
+        {% if trend.latest_adj_idx != -1 %}
+        <span style="font-size:12px; color:var(--warn);">(active epoch since last adjustment)</span>
+        {% else %}
+        <span style="font-size:12px; color:var(--ink-muted);">(excludes newest calibration)</span>
+        {% endif %}
+      </span>
+
+      <span style="color:var(--ink-muted);">Annual Drift Rate:</span>
+      <span class="mono">{{ '%.3e'|format(trend.slope * 365.25) }} {{ asset.unit }}/year</span>
+
+      <span style="color:var(--ink-muted);">Fit Residual (Syx):</span>
+      <span class="mono">{{ '%.3e'|format(trend.Syx) }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if stability %}
+  <div class="panel" style="margin-bottom:0; {{ 'border-color:var(--warn);' if stability.exceeds else '' }}">
+    <div class="panel-header">
+      <h3 class="panel-title">Manufacturer Stability Check</h3>
+      {% if stability.allowance_ppm is not none %}
+        {% if stability.exceeds %}
+        <span class="badge badge-warn"><span class="badge-dot"></span>Exceeds Spec</span>
+        {% else %}
+        <span class="badge badge-ok"><span class="badge-dot"></span>Within Spec</span>
+        {% endif %}
+      {% endif %}
+    </div>
+
+    {% if stability.allowance_ppm is none %}
+    <p style="color:var(--ink-muted); font-size:13px; margin:0;">
+      No manufacturer stability specification configured for model <code>{{ asset.model or '—' }}</code>.
+    </p>
+    {% else %}
+    <div style="font-size:13px; margin-bottom:12px;">
+      <div style="color:var(--ink-muted); margin-bottom:4px;">Spec: <strong>{{ stability.spec_description }}</strong></div>
+      <div style="color:var(--ink-muted);">Observed drift across <strong>{{ stability.elapsed_days }} days</strong>:
+        <strong style="color:{{ 'var(--warn)' if stability.exceeds else 'var(--ok)' }}">
+          {{ '%+.2f'|format(stability.observed_drift_ppm) }} ppm
+        </strong>
+        (limit ±{{ '%.2f'|format(stability.allowance_ppm) }} ppm)
+      </div>
+    </div>
+
+    {% set pct = (stability.observed_drift_ppm / stability.allowance_ppm * 50) | round(1) %}
+    {% set marker_pos = 50 + pct %}
+    {% set clamped_pos = 2 if marker_pos < 2 else (98 if marker_pos > 98 else marker_pos) %}
+    <div style="margin-top:14px;">
+      <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--ink-muted); margin-bottom:4px;">
+        <span>-{{ '%.2f'|format(stability.allowance_ppm) }} ppm</span>
+        <span>0 ppm</span>
+        <span>+{{ '%.2f'|format(stability.allowance_ppm) }} ppm</span>
+      </div>
+      <div style="height:10px; background:#e2e8f0; border-radius:999px; position:relative; overflow:visible;">
+        <div style="position:absolute; left:50%; top:-2px; bottom:-2px; width:2px; background:#94a3b8; transform:translateX(-50%);"></div>
+        <div style="position:absolute; left:0; right:0; top:0; bottom:0; background:rgba(34, 197, 94, 0.15); border-radius:999px;"></div>
+        <div style="position:absolute; left:{{ clamped_pos }}%; top:50%; width:12px; height:12px; border-radius:50%; transform:translate(-50%, -50%);
+                    background:{{ 'var(--warn)' if stability.exceeds else 'var(--ok)' }};
+                    border:2px solid #ffffff; box-shadow:0 1px 3px rgba(0,0,0,0.3);"
+             title="Observed: {{ '%+.2f'|format(stability.observed_drift_ppm) }} ppm">
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% elif asset.category == 'dcv_reference' %}
+  <div class="panel" style="margin-bottom:0;">
+    <div class="panel-header">
+      <h3 class="panel-title">Barometric Pressure &amp; Facility Epoch</h3>
+      <span class="badge badge-neutral">Altitude Shift Isolated</span>
+    </div>
+    <div style="font-size:13px;">
+      <p style="margin:0 0 6px 0; color:var(--ink-muted);">
+        <strong>Active Roseville Epoch:</strong> Calibrations since moving to Roseville on <code>2022-04-08</code> (~1013 hPa) are isolated from Loveland (~845 hPa) to eliminate barometric step shifts.
+      </p>
+      {% if calibrations and calibrations[-1].pressure_hpa %}
+      <div style="margin-top:10px; padding:10px 14px; background:var(--panel-subtle); border-radius:var(--radius-sm); border:1px solid var(--line);">
+        <span style="color:var(--ink-muted);">Current Facility:</span>
+        <strong style="color:var(--primary); font-size:13.5px; margin-left:6px;">{{ calibrations[-1].location or 'Roseville' }}</strong>
+        <span style="margin: 0 8px; color:var(--ink-faint);">·</span>
+        <span style="color:var(--ink-muted);">Ambient Pressure:</span>
+        <strong style="color:var(--primary); font-size:13.5px; margin-left:6px;">{{ calibrations[-1].pressure_hpa|int }} hPa</strong>
+      </div>
+      {% endif %}
+      <p style="font-size:11.5px; color:var(--ink-faint); margin:8px 0 0 0;">
+        Active trend reflects true diode aging at sea level (+0.04 ppm/year).
+      </p>
+    </div>
+  </div>
+  {% else %}
+  <div class="panel" style="margin-bottom:0;">
+    <div class="panel-header">
+      <h3 class="panel-title">Instrument Health &amp; Baseline</h3>
+      <span class="badge badge-ok"><span class="badge-dot"></span>Monitoring Active</span>
+    </div>
+    <div style="font-size:13px;">
+      {% if asset.category == 'waveform_generator' %}
+      <p style="margin:0 0 6px 0; color:var(--ink-muted);">
+        <strong>Active Post-Adjustment Epoch:</strong> Calibrations since the last adjustment on <code>2024-02-17</code> are isolated to prevent step shifts from distorting predictions.
+      </p>
+      <p style="margin:0; font-size:12px; color:var(--ink-faint);">
+        Current readings exhibit smooth, stable aging (~ -0.003 dB/year).
+      </p>
+      {% elif asset.category == 'ac_divider' %}
+      <p style="margin:0 0 6px 0; color:var(--ink-muted);">
+        <strong>Continuous Multi-Year Characterization:</strong> 11-year continuous baseline active across all 6 test frequencies.
+      </p>
+      <p style="margin:0; font-size:12px; color:var(--ink-faint);">
+        Lower frequencies (1 kHz – 100 kHz) demonstrate exceptional ratio stability (&lt; 26 ppm over 11 years).
+      </p>
+      {% else %}
+      <p style="margin:0; color:var(--ink-muted);">
+        Continuous multi-year trend active. All historical calibration points are tracked against the regression model.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Interactive Chart -->
+<div class="panel">
+  <div class="panel-header" style="margin-bottom:12px;">
+    <h3 class="panel-title">
+      Trend Analysis: {{ active_test_point.point_name if active_test_point else asset.model }}
+    </h3>
+    <div style="display:flex; gap:4px; background:var(--panel-subtle); padding:3px; border-radius:var(--radius-sm); border:1px solid var(--line);">
+      <button id="btnPrimary" class="btn" style="padding:4px 10px; font-size:12px; background:var(--panel);" onclick="setChartMode('primary')">
+        Measured ({{ asset.unit }})
+      </button>
+      <button id="btnRelative" class="btn" style="padding:4px 10px; font-size:12px; background:transparent; border:none; box-shadow:none;" onclick="setChartMode('relative')">
+        {% if asset.unit == 'dB' %}Deviation (dB){% else %}Relative Error (ppm){% endif %}
+      </button>
+    </div>
+  </div>
+
+  {% if trend %}
+  <div style="position:relative; height:320px; width:100%;">
+    <canvas id="trendChart"></canvas>
+  </div>
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; font-size:12px; color:var(--ink-muted);">
+    <span>Amber markers indicate points outside the 95% prediction interval. Blue markers denote metrologist-reviewed points.</span>
+    <span>
+      {% if trend.latest_adj_idx != -1 %}
+      Fit evaluated from latest adjustment epoch
+      {% else %}
+      Fit excludes newest calibration
+      {% endif %}
+    </span>
+  </div>
+  {% else %}
+  <p style="color:var(--ink-muted); padding:32px 0; text-align:center;">
+    Not enough calibration points to establish a regression trend (requires at least 4 historical calibrations in the current epoch).
+  </p>
+  {% endif %}
+</div>
+
+<!-- COMPACT ZERO-OVERFLOW CALIBRATION HISTORY TABLE WITH STICKY HEADER -->
+<div class="panel-header" style="margin-bottom:8px;">
+  <h3 class="panel-title">Calibration History: {{ active_test_point.point_name if active_test_point else 'Readings' }}</h3>
+</div>
+
+<div class="table-sticky-container">
+  <table class="sortable compact-history-table">
+    <thead>
+      <tr>
+        <th style="width:105px;" data-sort="text">Cal Date</th>
+        <th class="num" style="width:130px;" data-sort="number">Measured Value</th>
+        <th class="num" style="width:95px;" data-sort="number">Uncertainty</th>
+        <th class="num" style="width:110px;" data-sort="number">Error</th>
+        <th class="num" style="width:95px;" data-sort="number">Drift</th>
+        <th class="num" style="width:220px;" data-sort="number">95% Limits [Lower ↔ Upper]</th>
+        {% if asset.category == 'dcv_reference' %}
+          <th style="width:90px;" data-sort="text">Facility</th>
+          <th class="num" style="width:85px;" data-sort="number">Pressure</th>
+        {% endif %}
+        <th style="width:115px;" data-sort="text">Status</th>
+        <th style="width:75px; text-align:center;">Note</th>
+        <th style="width:65px; text-align:right;">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in calibrations|reverse %}
+      <tr style="{{ 'background: rgba(254, 243, 199, 0.4);' if c.display_status == 'out_of_trend' else ('background: rgba(239, 246, 255, 0.5);' if c.display_status == 'reviewed_out_of_trend' else ('background: rgba(241, 245, 249, 0.5);' if c.excluded_from_regression else '')) }}">
+        
+        <td class="num-cell" style="font-weight:600;">
+          {{ c.date }}
+          {% if asset.category == 'waveform_generator' and c.is_adjusted %}
+          <span class="badge badge-warn" style="font-size:9px; padding:1px 4px; margin-left:3px;">Adj</span>
+          {% endif %}
+        </td>
+        
+        <td class="num-cell right" data-value="{{ c.measured_value }}">
+          {% if asset.category == 'dcv_reference' %}
+            {{ '%.9f'|format(c.measured_value) }} V
+          {% elif asset.category == 'ac_divider' %}
+            {{ '%.5f'|format(c.measured_value) }}
+          {% elif asset.category == 'waveform_generator' %}
+            {{ '%+.5f'|format(c.measured_value) }} dB
+          {% else %}
+            {{ c.measured_value | measured(asset.nominal_ohms) }}
+          {% endif %}
+        </td>
+
+        <td class="num-cell right" data-value="{{ c.mu_relative }}">
+          {% if asset.category == 'dcv_reference' %}
+            {{ '%.1f'|format(c.mu_relative * 10.0 * 1e9) }} nV
+          {% elif asset.category == 'ac_divider' %}
+            {{ '%.1f'|format(c.mu_relative) }} ppm
+          {% elif asset.category == 'waveform_generator' %}
+            —
+          {% else %}
+            {{ '%.2e'|format(c.mu_relative * asset.nominal_ohms) }}
+          {% endif %}
+        </td>
+
+        <td class="num-cell right" data-value="{{ c.error_ppm if (c.error_ppm is defined and c.error_ppm is not none) else '' }}">
+          {% if c.error_ppm is defined and c.error_ppm is not none %}
+            {% if asset.unit == 'dB' %}
+              {{ '%+.3f'|format(c.error_ppm) }} dB
+            {% else %}
+              {{ '%+.2f'|format(c.error_ppm) }} ppm
+            {% endif %}
+          {% else %}—{% endif %}
+        </td>
+
+        <td class="num-cell right" data-value="{{ c.drift_ppm if (c.drift_ppm is defined and c.drift_ppm is not none) else '' }}">
+          {% if c.drift_ppm is defined and c.drift_ppm is not none %}
+            {% if asset.unit == 'dB' %}
+              {{ '%+.3f'|format(c.drift_ppm) }} dB
+            {% else %}
+              {{ '%+.2f'|format(c.drift_ppm) }} ppm
+            {% endif %}
+          {% else %}—{% endif %}
+        </td>
+
+        <!-- High-Contrast Metrology Acceptance Limit Chip (Zero Truncation) -->
+        <td class="num-cell right" data-value="{{ c.lower if (c.lower is defined and c.lower is not none) else '' }}">
+          {% if c.lower is defined and c.lower is not none and c.upper is defined and c.upper is not none %}
+            <span class="limit-chip">
+              {% if asset.category == 'dcv_reference' %}
+                {{ '%.8f'|format(c.lower) }} <span class="limit-sep">↔</span> {{ '%.8f'|format(c.upper) }}
+              {% elif asset.category == 'ac_divider' or asset.category == 'waveform_generator' %}
+                {{ '%.5f'|format(c.lower) }} <span class="limit-sep">↔</span> {{ '%.5f'|format(c.upper) }}
+              {% else %}
+                {{ c.lower | measured(asset.nominal_ohms) }} <span class="limit-sep">↔</span> {{ c.upper | measured(asset.nominal_ohms) }}
+              {% endif %}
+            </span>
+          {% else %}—{% endif %}
+        </td>
+
+        {% if asset.category == 'dcv_reference' %}
+        <td style="font-size:12px; font-weight:600;">{{ c.location or '—' }}</td>
+        <td class="num-cell right" data-value="{{ c.pressure_hpa if c.pressure_hpa is not none else '' }}">
+          {% if c.pressure_hpa %}{{ c.pressure_hpa|int }} hPa{% else %}—{% endif %}
+        </td>
+        {% endif %}
+
+        <td>
+          {% if c.display_status == 'excluded' %}
+            <span class="badge badge-neutral">Excluded</span>
+          {% elif c.display_status == 'reviewed_out_of_trend' %}
+            <span class="badge badge-reviewed"><span class="badge-dot"></span>Reviewed</span>
+          {% elif c.display_status == 'out_of_trend' %}
+            <span class="badge badge-warn"><span class="badge-dot"></span>Out of Trend</span>
+          {% elif c.display_status == 'ok' %}
+            <span class="badge badge-ok"><span class="badge-dot"></span>In Trend</span>
+          {% elif c.in_active_epoch is defined and not c.in_active_epoch %}
+            <span class="badge badge-neutral">Prior Epoch</span>
+          {% else %}
+            <span class="badge badge-neutral">—</span>
+          {% endif %}
+        </td>
+
+        <td style="text-align:center;">
+          {% if c.reviewer_comment or c.reviewer_attachment_path %}
+            <button type="button" class="btn" style="padding:1px 6px; font-size:11px;"
+                    onclick="openNoteModal('{{ c.date }}', '{{ (c.reviewer_comment or '')|replace('\'', '\\\'') }}', '{{ c.reviewer_attachment_path or '' }}', '{{ c.id }}')">
+              Note
+            </button>
+          {% else %}
+            <span style="color:var(--ink-faint);">—</span>
+          {% endif %}
+        </td>
+
+        <td style="text-align:right;">
+          <a href="{{ url_for('calibration_edit', calibration_id=c.id) }}" class="btn" style="padding:1px 7px; font-size:11px;">Edit</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="note-modal-overlay" id="noteModal" onclick="closeNoteModal(event)">
+  <div class="note-modal-card" onclick="event.stopPropagation()">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--line); padding-bottom:8px;">
+      <h4 style="margin:0; font-size:15px; color:var(--primary);" id="noteModalTitle">Reviewer Note</h4>
+      <button type="button" onclick="closeNoteModal()" style="background:none; border:none; font-size:18px; cursor:pointer; color:var(--ink-faint);">&times;</button>
+    </div>
+    <p id="noteModalContent" style="font-size:13.5px; color:var(--ink); line-height:1.6; white-space:pre-wrap; margin:0 0 16px 0;"></p>
+    <div id="noteModalAttachment" style="display:none; padding-top:12px; border-top:1px dashed var(--line);">
+      <a id="noteModalAttachLink" href="#" target="_blank" class="btn btn-primary" style="font-size:12px;">
+        Open Attached File
+      </a>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+const cals = {{ calibrations | tojson }};
+const stability = {{ stability | tojson }};
+const assetUnit = {{ asset.unit | tojson }};
+let currentMode = 'primary';
+let chartInstance = null;
+
+function copySerial(text, el) {
+  navigator.clipboard.writeText(text).then(() => {
+    const original = el.innerHTML;
+    el.innerHTML = '<strong>' + text + '</strong> <span style="color:var(--ok); font-weight:600;">✓ Copied</span>';
+    setTimeout(() => { el.innerHTML = original; }, 2000);
+  });
+}
+
+function openNoteModal(date, comment, attachPath, calId) {
+  document.getElementById('noteModalTitle').textContent = 'Reviewer Note — ' + date;
+  document.getElementById('noteModalContent').textContent = comment || 'No note text entered.';
+  const attachDiv = document.getElementById('noteModalAttachment');
+  const attachLink = document.getElementById('noteModalAttachLink');
+  if (attachPath) {
+    attachDiv.style.display = 'block';
+    attachLink.href = '/calibrations/' + calId + '/attachment';
+  } else {
+    attachDiv.style.display = 'none';
+  }
+  document.getElementById('noteModal').classList.add('open');
+}
+
+function closeNoteModal(e) {
+  if (!e || e.target === document.getElementById('noteModal')) {
+    document.getElementById('noteModal').classList.remove('open');
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeNoteModal();
+});
+
+function buildData(mode) {
+  return {
+    measured: cals.map(c => ({
+      x: c.accumulated_days,
+      y: mode === 'primary' ? c.measured_value : c.error_ppm
+    })),
+    predicted: cals.map(c => ({
+      x: c.accumulated_days,
+      y: mode === 'primary' ? c.predicted : (c.predicted ? c.predicted_error_ppm : null)
+    })),
+    lower: cals.map(c => ({
+      x: c.accumulated_days,
+      y: mode === 'primary' ? c.lower : (c.lower ? c.lower_error_ppm : null)
+    })),
+    upper: cals.map(c => ({
+      x: c.accumulated_days,
+      y: mode === 'primary' ? c.upper : (c.upper ? c.upper_error_ppm : null)
+    }))
+  };
+}
+
+function pointColor(c) {
+  if (c.excluded_from_regression) return '#94a3b8';
+  if (c.display_status === 'reviewed_out_of_trend') return '#1d4ed8';
+  if (c.out_of_trend) return '#b45309';
+  return '#0f2744';
+}
+
+function initChart() {
+  const ctx = document.getElementById('trendChart');
+  if (!ctx) return;
+
+  const d = buildData(currentMode);
+
+  chartInstance = new Chart(ctx, {
+    type: 'scatter',
+    data: {
+      datasets: [
+        {
+          label: 'Upper Bound (95%)',
+          data: d.upper,
+          showLine: true,
+          borderColor: '#93c5fd',
+          backgroundColor: 'rgba(219, 234, 254, 0.35)',
+          fill: '+1',
+          pointRadius: 0,
+          borderWidth: 1.5,
+          order: 3
+        },
+        {
+          label: 'Lower Bound (95%)',
+          data: d.lower,
+          showLine: true,
+          borderColor: '#93c5fd',
+          pointRadius: 0,
+          borderWidth: 1.5,
+          order: 3
+        },
+        {
+          label: 'Prediction',
+          data: d.predicted,
+          showLine: true,
+          borderColor: '#64748b',
+          borderDash: [3, 4],
+          pointRadius: 0,
+          borderWidth: 1.5,
+          order: 2
+        },
+        {
+          label: 'Measured Calibration',
+          data: d.measured,
+          showLine: false,
+          backgroundColor: cals.map(pointColor),
+          pointStyle: cals.map(c => c.excluded_from_regression ? 'crossRot' : (c.is_adjusted ? 'rectRot' : 'circle')),
+          pointRadius: 5.5,
+          order: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            boxWidth: 12,
+            font: { family: "'IBM Plex Sans', sans-serif", size: 12 }
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const c = cals[context.dataIndex];
+              const modeLabel = currentMode === 'primary' ? ' ' + assetUnit : (assetUnit === 'dB' ? ' dB' : ' ppm');
+              const val = context.parsed.y;
+              const lines = [
+                'Date: ' + c.date,
+                context.dataset.label + ': ' + (val !== null ? val.toFixed(assetUnit === 'V' ? 8 : (assetUnit === 'dB' ? 4 : 5)) + modeLabel : '—')
+              ];
+              if (c.pressure_hpa) {
+                lines.push('Pressure: ' + c.pressure_hpa + ' hPa' + (c.location ? ' (' + c.location + ')' : ''));
+              }
+              if (c.is_adjusted) {
+                lines.push('Note: Calibration Adjusted');
+              }
+              if (c.display_status === 'reviewed_out_of_trend') {
+                lines.push('Review: Metrologist Investigated & Documented');
+              }
+              return lines;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          title: { display: true, text: 'Accumulated Days in Service', font: { size: 12 } },
+          grid: { color: '#f1f5f9' }
+        },
+        y: {
+          title: {
+            display: true,
+            text: currentMode === 'primary' ? 'Measured Value (' + assetUnit + ')' : (assetUnit === 'dB' ? 'Deviation (dB)' : 'Relative Drift (ppm)'),
+            font: { size: 12 }
+          },
+          grid: { color: '#f1f5f9' }
+        }
+      }
+    }
+  });
+}
+
+function setChartMode(mode) {
+  currentMode = mode;
+  document.getElementById('btnPrimary').style.background = mode === 'primary' ? 'var(--panel)' : 'transparent';
+  document.getElementById('btnPrimary').style.boxShadow = mode === 'primary' ? 'var(--shadow-sm)' : 'none';
+  document.getElementById('btnRelative').style.background = mode === 'relative' ? 'var(--panel)' : 'transparent';
+  document.getElementById('btnRelative').style.boxShadow = mode === 'relative' ? 'var(--shadow-sm)' : 'none';
+
+  if (!chartInstance) return;
+
+  const d = buildData(mode);
+  chartInstance.data.datasets[0].data = d.upper;
+  chartInstance.data.datasets[1].data = d.lower;
+  chartInstance.data.datasets[2].data = d.predicted;
+  chartInstance.data.datasets[3].data = d.measured;
+  chartInstance.options.scales.y.title.text = mode === 'primary' ? 'Measured Value (' + assetUnit + ')' : (assetUnit === 'dB' ? 'Deviation (dB)' : 'Relative Drift (ppm)');
+  chartInstance.update();
+}
+
+document.addEventListener('DOMContentLoaded', initChart);
+</script>
+
+{% endblock %}

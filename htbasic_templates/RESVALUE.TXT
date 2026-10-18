@@ -1,0 +1,62 @@
+Rs Serial # :1690490
+Rx Serial # :10001
+9.9999405
+Rs Serial # :1690490
+Rx Serial # :10010
+9.9998285 ! PN010003
+Rs Serial # :10004
+Rx Serial # :20014
+100.000241 ! PN010005
+Rs Serial # :10004
+Rx Serial # :20050
+99.998591
+Rs Serial # :20163
+Rx Serial # :30162
+1000.01747 ! PN010007
+Rs Serial # :20163
+Rx Serial # :30267
+1000.01137
+Rs Serial # :20163
+Rx Serial # :30269
+1000.0019
+Rs Serial # :20163
+Rx Serial # :30129
+1000.0014
+Rs Serial # :30127
+Rx Serial # :318  
+10000.0471
+Rs Serial # :30127
+Rx Serial # :319  
+10000.0570
+Rs Serial # :30127
+Rx Serial # :40031
+10000.0827
+Rs Serial # :30127
+Rx Serial # :40055
+10000.0952
+Rs Serial # :30127
+Rx Serial # :40056
+10000.0774
+Rs Serial # :30127
+Rx Serial # :40059
+9999.9951 ! PN010009
+Rs Serial # :30127
+Rx Serial # :40060
+10000.0886
+Rs Serial # :30127
+Rx Serial # :40069
+10000.0795
+Rs Serial # :30127
+Rx Serial # :40070
+10000.0811
+Rs Serial # :30127
+Rx Serial # :40073
+10000.0872
+Rs Serial # :30127
+Rx Serial # :40081
+10000.0716
+Rs Serial # :30127
+Rx Serial # :40233
+10000.0440
+233
+10000.0248

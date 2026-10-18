@@ -1,0 +1,29 @@
+{
+  "_note": "DEMO IDs. Replace with the real Equipment_IDs of your 19 B-1 ETEs and Sets 1-3. Slot 1 and 2 are the B-1 Calibrator and Amplifier.",
+  "b1": [
+    {"slot": "Calibrator", "equipment_id": "PN020001"},
+    {"slot": "Amplifier", "equipment_id": "PN020002"},
+    {"slot": "Golden DMM", "equipment_id": "PN010003"},
+    {"slot": "10V Reference", "equipment_id": "PN010004"},
+    {"slot": "1V Reference", "equipment_id": "PN010005"},
+    {"slot": "1 Ohm Standard", "equipment_id": "PN010006"},
+    {"slot": "10 Ohm Standard", "equipment_id": "PN010007"},
+    {"slot": "100 Ohm Standard", "equipment_id": "PN010008"},
+    {"slot": "1k Ohm Standard", "equipment_id": "PN010009"},
+    {"slot": "10k Ohm Standard", "equipment_id": "PN010010"},
+    {"slot": "100k Ohm Standard", "equipment_id": "PN010011"},
+    {"slot": "1M Ohm Standard", "equipment_id": "PN010012"},
+    {"slot": "Divider 1", "equipment_id": "PN010013"},
+    {"slot": "Divider 2", "equipment_id": "PN010014"},
+    {"slot": "Shunt 1", "equipment_id": "PN010015"},
+    {"slot": "Shunt 2", "equipment_id": "PN010016"},
+    {"slot": "Thermometer", "equipment_id": "PN010017"},
+    {"slot": "Hygrometer", "equipment_id": "PN010018"},
+    {"slot": "Barometer", "equipment_id": "PN010019"}
+  ],
+  "sets": [
+    {"num": 1, "calibrator": "PN020001", "amplifier": "PN020002"},
+    {"num": 2, "calibrator": "PN020003", "amplifier": "PN020004"},
+    {"num": 3, "calibrator": "PN020005", "amplifier": "PN020006"}
+  ]
+}

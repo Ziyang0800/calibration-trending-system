@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block subtitle %}Edit Asset{% endblock %}
+{% block content %}
+
+<div style="max-width: 640px; margin: 0 auto;">
+  <div style="margin-bottom: 20px;">
+    <h2 style="font-size:22px; font-weight:700; margin:0 0 4px 0; color:var(--primary);">Edit Standard Asset</h2>
+    <p style="color:var(--ink-muted); margin:0; font-size:13.5px;">Update metadata, classification, or assigned equipment group.</p>
+  </div>
+
+  {% if error %}
+  <div class="panel" style="border-color:var(--warn); background:var(--warn-bg); color:var(--warn); padding:14px; margin-bottom:20px; font-size:13.5px;">
+    <strong>Error:</strong> {{ error }}
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <form method="post">
+      <p>
+        <label style="font-weight:600;">Category / Equipment Type</label>
+        <select name="category" style="width:100%; margin-top:4px;">
+          <option value="standard_resistor" {{ 'selected' if asset.category == 'standard_resistor' }}>Standard Resistor (Ω)</option>
+          <option value="dcv_reference" {{ 'selected' if asset.category == 'dcv_reference' }}>DC Voltage Reference (732A/C - Volts)</option>
+          <option value="ac_divider" {{ 'selected' if asset.category == 'ac_divider' }}>AC Voltage Divider (Ratio)</option>
+          <option value="waveform_generator" {{ 'selected' if asset.category == 'waveform_generator' }}>Waveform Generator (33622A - dB)</option>
+        </select>
+      </p>
+
+      <p>
+        <label style="font-weight:600;">Serial Number</label>
+        <input type="text" name="serial" value="{{ asset.serial }}" required style="width:100%; margin-top:4px;">
+      </p>
+
+      <p>
+        <label style="font-weight:600;">Model</label>
+        <input type="text" name="model" value="{{ asset.model or '' }}" placeholder="e.g. 742A-1K, 33622A" style="width:100%; margin-top:4px;">
+      </p>
+
+      <p>
+        <label style="font-weight:600;">Equipment ID / Asset Property Number</label>
+        <input type="text" name="asset_number" value="{{ asset.asset_number or '' }}" placeholder="e.g. PN010006, SL906099" style="width:100%; margin-top:4px;">
+      </p>
+
+      <div style="display:grid; grid-template-columns: 2fr 1fr; gap:16px;">
+        <p>
+          <label style="font-weight:600;">Nominal Value (Base Units)</label>
+          <input type="number" step="any" name="nominal_ohms" value="{{ asset.nominal_ohms }}" required style="width:100%; margin-top:4px;">
+        </p>
+        <p>
+          <label style="font-weight:600;">Engineering Unit</label>
+          <input type="text" name="unit" value="{{ asset.unit or 'Ω' }}" required style="width:100%; margin-top:4px;">
+        </p>
+      </div>
+
+      <p>
+        <label style="font-weight:600;">Assigned Set</label>
+        <input type="text" name="set_id" value="{{ asset.set_id or '' }}" list="known-sets" placeholder="e.g. Set 1, Set 2" style="width:100%; margin-top:4px;">
+        <datalist id="known-sets">
+          <option value="Set 1">
+          <option value="Set 2">
+          <option value="Set 3">
+        </datalist>
+      </p>
+
+      <div style="display:flex; gap:10px; margin-top:24px; padding-top:16px; border-top:1px solid var(--line);">
+        <button class="btn btn-primary" type="submit">Save Changes</button>
+        <a class="btn" href="{{ url_for('asset_detail', asset_id=asset.id) }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="panel" style="border-color:#fecaca; background:#fff5f5;">
+    <h3 style="font-size:14.5px; color:#dc2626; margin:0 0 8px 0;">Delete Standard Asset</h3>
+    <p style="font-size:13px; color:#7f1d1d; margin:0 0 16px 0;">
+      Permanently removes this asset, its test point definitions, and all historical calibration records from the database.
+    </p>
+    <form method="post" action="{{ url_for('asset_delete', asset_id=asset.id) }}"
+          onsubmit="return confirm('Permanently delete {{ asset.serial }} ({{ asset.model }}) and all historical records? This cannot be undone.');">
+      <button class="btn" type="submit" style="background:#dc2626; border-color:#dc2626; color:#ffffff;">Delete Asset</button>
+    </form>
+  </div>
+</div>
+
+{% endblock %}

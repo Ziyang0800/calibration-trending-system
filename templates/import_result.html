@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block subtitle %}Import Complete{% endblock %}
+{% block content %}
+
+<div style="max-width: 720px; margin: 0 auto;">
+  <div style="margin-bottom: 24px;">
+    <h2 style="font-size:24px; font-weight:700; margin:0 0 4px 0; color:var(--primary);">Import Summary</h2>
+    <p style="color:var(--ink-muted); margin:0; font-size:13.5px;">Calibration certificate batch processing results.</p>
+  </div>
+
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Certificate File</th>
+          <th>Result Status</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in summary %}
+        <tr>
+          <td class="mono" style="font-weight:600;">{{ s.filename }}</td>
+          <td>
+            {% if s.status == 'imported' %}
+            <span class="badge badge-ok"><span class="badge-dot"></span>Imported</span>
+            {% elif s.status == 'duplicate' %}
+            <span class="badge badge-neutral"><span class="badge-dot"></span>Skipped</span>
+            {% else %}
+            <span class="badge badge-warn"><span class="badge-dot"></span>Error</span>
+            {% endif %}
+          </td>
+          <td style="font-size:13px; color:var(--ink-muted);">{{ s.detail }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="display:flex; gap:12px; margin-top:24px;">
+    {% if last_asset_id %}
+    <a class="btn btn-primary" href="{{ url_for('asset_detail', asset_id=last_asset_id) }}">View Last Imported Asset</a>
+    {% endif %}
+    <a class="btn" href="{{ url_for('import_form') }}">Import More</a>
+    <a class="btn" href="{{ url_for('dashboard') }}">Return to Dashboard</a>
+  </div>
+</div>
+
+{% endblock %}

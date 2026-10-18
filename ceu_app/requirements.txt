@@ -1,0 +1,4 @@
+pywebview>=5.0
+requests>=2.31
+keyring>=24.0     # optional: remembers the MARS login in Windows Credential Manager
+pyinstaller>=6.0  # only on the PC that builds the exe

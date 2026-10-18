@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CEU Validation Tool</title>
+<style>
+:root{--bg:#0b0b0c;--surface:#151517;--raised:#1d1d20;--line:#2a2a2e;--fg:#ececec;--muted:#9a9fa6;--red:#e90029;--red-soft:#2a1017;
+--ok:#3ecf8e;--warn:#f5a524;--bad:#ff4a68;--b1:#1fb5a8;--b2:#9b6bff;--st:var(--b1);
+--font:"Segoe UI Variable","Segoe UI",system-ui,sans-serif;--mono:"Cascadia Mono",Consolas,monospace}
+body[data-station="B-2"]{--st:var(--b2)}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 var(--font);display:flex;flex-direction:column;overflow:hidden;user-select:none}
+input{user-select:text}
+header{display:flex;align-items:center;gap:20px;padding:12px 24px;border-bottom:1px solid var(--line);background:var(--surface)}
+.mark{width:14px;height:34px;background:var(--red);border-radius:2px}
+.title b{display:block;font-size:17px;letter-spacing:.01em}
+.title span{color:var(--muted);font-size:12px}
+.sp{flex:1}
+.seg{display:flex;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:3px;gap:3px}
+.seg button{border:0;background:none;color:var(--muted);font:600 14px var(--font);padding:8px 22px;border-radius:6px;cursor:pointer}
+.seg button.on{color:#fff}
+.seg button[data-st="B-1"].on{background:var(--b1)}
+.seg button[data-st="B-2"].on{background:var(--b2)}
+.src{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.dot.stale{background:var(--warn)} .dot.err{background:var(--bad)} .dot.busy{background:var(--st);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.25}}
+.badge{font:600 11px var(--mono);letter-spacing:.08em;padding:3px 8px;border-radius:4px;background:var(--warn);color:#111}
+.ghost{background:var(--raised);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font:500 12px var(--font);cursor:pointer}
+.ghost:hover{border-color:var(--muted)}
+main{flex:1;display:flex;flex-direction:column;gap:16px;padding:20px 24px;min-height:0}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 16px}
+.kpi small{display:block;font:600 11px var(--mono);letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.kpi b{font-size:28px;line-height:1.2}
+.kpi span{display:block;font-size:12px;color:var(--muted)}
+.kpi.ok b{color:var(--ok)} .kpi.warn b{color:var(--warn)} .kpi.bad b{color:var(--bad)}
+.scan{display:grid;grid-template-columns:1fr 200px;gap:12px;align-items:end}
+.scanbox{background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--st);border-radius:8px;padding:14px 16px}
+.scanbox label{font:600 11px var(--mono);letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+#scan{width:100%;margin-top:6px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:12px 14px;font:600 20px var(--mono);outline:none}
+#scan:focus{border-color:var(--st)}
+#msg{min-height:22px;margin-top:8px;font-weight:600}
+#msg.verified{color:var(--ok)} #msg.dup{color:var(--warn)} #msg.invalid,#msg.not_in_station{color:var(--bad)}
+.so{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.so label{font:600 11px var(--mono);letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.so input{width:100%;margin-top:6px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:9px 12px;font:15px var(--mono);outline:none}
+.prog{display:flex;align-items:center;gap:14px}
+.track{flex:1;height:8px;background:var(--line);border-radius:4px;overflow:hidden}
+.fill{height:100%;width:0;background:var(--st);transition:width .25s}
+#pt{font:600 13px var(--mono);white-space:nowrap}
+.tablewrap{flex:1;min-height:0;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%}
+th{position:sticky;top:0;background:var(--raised);text-align:left;font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--line)}
+td{padding:9px 14px;border-bottom:1px solid var(--line)}
+td.id{font-family:var(--mono)}
+tr.flash{animation:flash 1s}
+@keyframes flash{from{background:rgba(62,207,142,.35)}}
+tr.vf td{background:rgba(62,207,142,.06)}
+.chip{display:inline-block;font:600 12px var(--font);padding:2px 10px;border-radius:999px}
+.chip.ok{background:rgba(62,207,142,.15);color:var(--ok)} .chip.warn{background:rgba(245,165,36,.15);color:var(--warn)} .chip.bad{background:rgba(255,74,104,.15);color:var(--bad)}
+.tick{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;color:transparent;font-weight:700}
+tr.vf .tick{background:var(--ok);border-color:var(--ok);color:#06150e}
+.muted{color:var(--muted)}
+#ov{position:fixed;inset:0;background:rgba(0,0,0,.72);display:none;place-items:center;z-index:10}
+#ov.on{display:grid}
+.dlg{background:var(--surface);border:1px solid var(--line);border-radius:10px;width:min(620px,92vw);max-height:88vh;overflow:auto}
+.dlg h2{margin:0;padding:16px 22px;font-size:16px;color:#fff;background:var(--red);border-radius:10px 10px 0 0}
+.dlg h2.n{background:var(--raised)}
+.dlg .b{padding:18px 22px;display:flex;flex-direction:column;gap:12px}
+.dlg .f{display:flex;justify-content:flex-end;gap:10px;padding:0 22px 18px}
+.primary{background:var(--red);color:#fff;border:0;border-radius:6px;padding:10px 24px;font:600 14px var(--font);cursor:pointer}
+.primary:disabled{background:#3a3a3f;color:#888;cursor:not-allowed}
+.set{display:flex;gap:12px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:12px 14px;cursor:pointer;background:var(--bg)}
+.set.sel{border-color:var(--b2);background:#1c1530}
+.set.off{opacity:.45;cursor:not-allowed}
+.set b{display:block}
+.set small{color:var(--muted)}
+.set .why{color:var(--bad);font-weight:600;font-size:12px}
+.big{font:700 54px var(--mono);text-align:center;color:var(--st)}
+.field{display:flex;flex-direction:column;gap:4px}
+.field input[type=text],.field input[type=password]{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:10px 12px;font:14px var(--font);outline:none}
+.err{color:var(--bad);font-weight:600}
+#seterr{display:none;background:var(--red-soft);border-bottom:1px solid var(--red);color:#ff8fa0;padding:10px 24px;font-weight:600;word-break:break-all}
+</style></head>
+<body data-station="B-1">
+<header>
+  <div class="mark"></div>
+  <div class="title"><b>CEU Validation Tool</b><span>3458A OGC Calibration Equipment Used</span></div>
+  <div class="sp"></div>
+  <div class="seg" id="seg"><button data-st="B-1">Station B-1</button><button data-st="B-2">Station B-2</button></div>
+  <div class="sp"></div>
+  <div class="src"><span class="dot" id="dot"></span><span id="srctxt">Loading...</span>
+    <span class="badge" id="demo" style="display:none">DEMO DATA</span>
+    <button class="ghost" id="btnRefresh">Refresh</button><button class="ghost" id="btnConnect">MARS login</button></div>
+</header>
+<div id="seterr"></div>
+<main>
+  <div class="kpis" id="kpis"></div>
+  <div class="scan">
+    <div class="scanbox"><label for="scan">Scan ETE barcode</label>
+      <input id="scan" autocomplete="off" spellcheck="false" placeholder="Scan or type the Equipment ID, then Enter"><div id="msg"></div></div>
+    <div class="so"><label for="so">SO number</label><input id="so" autocomplete="off" placeholder="optional"></div>
+  </div>
+  <div class="prog"><div class="track"><div class="fill" id="fill"></div></div><span id="pt"></span>
+    <button class="ghost" id="btnReset">Clear scans</button></div>
+  <div class="tablewrap"><table><thead><tr><th>Slot</th><th>Equipment ID</th><th>Model</th><th>Whereabout</th><th>Cal due</th><th>Status</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
+</main>
+<div id="ov"><div class="dlg" id="dlg"></div></div>
+
+<script>
+(function(){
+var S=null,firstDone=false,modal=false,counting=false,lastFlash=null;
+var $=function(i){return document.getElementById(i)};
+var esc=function(t){return String(t==null?"":t).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
+var api=function(){return window.pywebview.api};
+function fmtDate(d){if(!d)return"-";var x=new Date(d+"T00:00:00");return isNaN(x)?d:x.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}
+function fmtTime(t){if(!t)return"";var x=new Date(t);return x.toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}
+function chipClass(r){return r.status==="Valid"?"ok":r.status==="Expiring Soon"?"warn":"bad"}
+
+/* ---------------- rendering ---------------- */
+function render(){
+ document.body.dataset.station=S.station;
+ var se=$("seterr");se.style.display=S.setup_error?"block":"none";se.textContent=S.setup_error||"";
+ Array.prototype.forEach.call($("seg").children,function(b){b.classList.toggle("on",b.dataset.st===S.station)});
+ var dot=$("dot"),txt=$("srctxt");
+ dot.className="dot";
+ if(S.refreshing){dot.classList.add("busy");txt.textContent="Updating from MARS..."}
+ else if(S.fetch_error){dot.classList.add("err");txt.textContent="MARS error - showing last data"+(S.fetched_at?" ("+fmtTime(S.fetched_at)+")":"");txt.title=S.fetch_error}
+ else if(S.stale){dot.classList.add("stale");txt.textContent="Data older than 24 h ("+fmtTime(S.fetched_at)+")"}
+ else{txt.textContent="MARS data as of "+fmtTime(S.fetched_at);txt.title=""}
+ $("demo").style.display=S.mode==="demo"?"":"none";
+ $("btnConnect").textContent=S.mode==="demo"?"Connect to MARS":"MARS login";
+
+ var k=S.kpi,b1c=k.b1_ready>=k.b1_total?"ok":(k.b1_ready>=10?"warn":"bad");
+ $("kpis").innerHTML=
+  card("B-1 ready",k.b1_ready+"/"+k.b1_total,b1c,k.b1_ready>=k.b1_total?"Station ready":"Station not ready")+
+  card("B-2 Cal/Amp",k.b2_ready==null?"-":k.b2_ready+"/2",k.b2_ready==null?"":(k.b2_ready>=2?"ok":"bad"),S.b2_set?"Set "+S.b2_set:"No Set chosen")+
+  card("Expiring soon",k.expiring,k.expiring?"warn":"","due within 30 days")+
+  card("Expired",k.expired,k.expired?"bad":"","past cal due date")+
+  card("Sent for cal",k.sent,k.sent?"bad":"","whereabout RCV");
+
+ var tb=$("rows"),h="";
+ S.rows.forEach(function(r){
+  var d=r.days_left==null?"":(r.days_left<0?" ("+(-r.days_left)+" d ago)":" ("+r.days_left+" d)");
+  h+='<tr class="'+(r.verified?"vf ":"")+(lastFlash===r.equipment_id?"flash":"")+'"><td>'+esc(r.slot)+'</td><td class="id">'+esc(r.equipment_id)+
+   '</td><td>'+esc(r.model)+'</td><td class="id">'+esc(r.whereabout||"-")+'</td><td>'+fmtDate(r.due)+'<span class="muted">'+d+'</span></td>'+
+   '<td><span class="chip '+chipClass(r)+'" title="'+esc(r.reason)+'">'+esc(r.status)+'</span></td><td><div class="tick">&#10003;</div></td></tr>';
+ });
+ tb.innerHTML=h;lastFlash=null;
+ $("fill").style.width=(S.total?S.verified/S.total*100:0)+"%";
+ $("pt").textContent=S.verified+" of "+S.total+" verified";
+ if(document.activeElement!==$("so"))$("so").value=S.so||"";
+}
+function card(l,v,c,s){return'<div class="kpi '+c+'"><small>'+l+'</small><b>'+v+'</b><span>'+s+'</span></div>'}
+async function poll(){
+ try{S=await api().get_state()}catch(e){return}
+ render();
+ if(!S.refreshing&&!firstDone){firstDone=true;checkReminders()}
+}
+
+/* ---------------- modal helpers ---------------- */
+function openModal(html){modal=true;$("dlg").innerHTML=html;$("ov").classList.add("on");return $("dlg")}
+function closeModal(){modal=false;$("ov").classList.remove("on");$("dlg").innerHTML="";focusScan()}
+function focusScan(){if(!modal)setTimeout(function(){var a=document.activeElement;if(!modal&&(!a||a===document.body))$("scan").focus()},30)}
+document.addEventListener("keydown",function(e){if(modal&&e.key==="Escape"){e.preventDefault()}},true);
+
+/* ---------------- reminders (once per day) ---------------- */
+async function checkReminders(){
+ var list=await api().get_reminders();
+ if(!list.length)return;
+ var li=list.map(function(r){return"<li><b>"+esc(r.equipment_id)+"</b> "+esc(r.model)+" - due "+fmtDate(r.due)+" ("+r.days_left+" days)</li>"}).join("");
+ var d=openModal('<h2 class="n">Calibration due within 30 days</h2><div class="b"><ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px">'+li+'</ul><span class="muted">This reminder shows once a day.</span></div><div class="f"><button class="primary" id="ok">OK</button></div>');
+ d.querySelector("#ok").onclick=async function(){await api().reminders_shown();closeModal()};
+}
+
+/* ---------------- switching station ---------------- */
+async function switchTo(st){
+ if(modal||counting)return;
+ if(st==="B-1"){if(S.station!=="B-1"){await api().go_b1();await poll()}return}
+ if(await api().need_warning())await showWarning();
+ await showPicker();
+}
+function showWarning(){return new Promise(function(res){
+ var d=openModal('<h2>STATION B-2 - PARAMETRIC TESTING ONLY</h2><div class="b"><div>Station B-2 should only be used when the DUT requires <b>PARAMETRIC testing</b> involving <b>TWO sets</b> of Fluke Calibrator &amp; Amplifier.</div><div>For all other testing, please use <b>Station B-1</b> at all times.</div><label style="display:flex;gap:10px;align-items:center;cursor:pointer"><input type="checkbox" id="ack" style="width:18px;height:18px;accent-color:#e90029"> I acknowledge - do not show this again until next launch</label></div><div class="f"><button class="primary" id="go" disabled>Continue</button></div>');
+ var ack=d.querySelector("#ack"),go=d.querySelector("#go");
+ ack.onchange=function(){go.disabled=!ack.checked};
+ go.onclick=async function(){await api().acknowledge_b2();res()};
+})}
+async function showPicker(){
+ var sets=await api().get_sets(),pick=null;
+ var any=sets.some(function(s){return s.available});
+ var html='<h2 style="background:var(--b2)">Station B-2: choose the Calibrator &amp; Amplifier Set</h2><div class="b">';
+ sets.forEach(function(s){
+  html+='<div class="set'+(s.available?"":" off")+'" data-n="'+s.num+'"><div style="flex:1"><b>Set '+s.num+'</b><small>'+esc(s.calibrator.equipment_id)+" "+esc(s.calibrator.model)+" + "+esc(s.amplifier.equipment_id)+" "+esc(s.amplifier.model)+'</small>'+(s.available?"":'<div class="why">'+esc(s.reason)+"</div>")+(s.last_used&&s.available?'<div class="muted" style="font-size:12px">Last used</div>':"")+'</div></div>';
+ });
+ if(!any)html+='<div class="err">No Set is available right now.</div>';
+ html+='</div><div class="f">'+(any?'':'<button class="ghost" id="stay">Stay on Station B-1</button>')+'<button class="primary" id="ok" disabled>OK</button></div>';
+ var d=openModal(html),ok=d.querySelector("#ok");
+ var cards=d.querySelectorAll(".set");
+ function select(n){pick=n;Array.prototype.forEach.call(cards,function(c){c.classList.toggle("sel",+c.dataset.n===n)});ok.disabled=false}
+ Array.prototype.forEach.call(cards,function(c){if(!c.classList.contains("off"))c.onclick=function(){select(+c.dataset.n)}});
+ var last=sets.filter(function(s){return s.last_used&&s.available})[0];if(last)select(last.num);
+ if(d.querySelector("#stay"))d.querySelector("#stay").onclick=function(){closeModal()};
+ ok.onclick=async function(){
+  try{await api().choose_set(pick);closeModal();await poll()}
+  catch(e){d.querySelector(".b").insertAdjacentHTML("beforeend",'<div class="err">'+esc(e.message||e)+"</div>")}
+ };
+}
+
+/* ---------------- scanning ---------------- */
+async function doScan(code){
+ var r=await api().scan(code);
+ if(r.kind==="ignore")return;
+ var m=$("msg");m.className=r.kind;m.textContent=r.message;
+ if(r.kind==="verified")lastFlash=r.code;
+ await poll();
+ if(r.kind==="verified"&&S.all_verified)startCountdown();
+}
+function startCountdown(){
+ counting=true;var n=2;
+ var d=openModal('<h2 style="background:var(--ok);color:#06150e">All ETEs verified</h2><div class="b"><div class="big" id="n">'+n+'</div><div style="text-align:center">Copying and creating the report in <span id="n2">'+n+'</span> s...</div></div>');
+ var t=setInterval(async function(){
+  n--;
+  if(n>0){d.querySelector("#n").textContent=n;d.querySelector("#n2").textContent=n;return}
+  clearInterval(t);
+  try{
+   var r=await api().complete();
+   d.innerHTML='<h2 style="background:var(--ok);color:#06150e">Done</h2><div class="b"><div>'+(r.copied?"The ETE list was copied to the clipboard.":"<span class='err'>Could not copy to the clipboard.</span>")+'</div><div>Report saved:<br><span style="font-family:var(--mono);word-break:break-all">'+esc(r.path)+'</span></div></div><div class="f"><button class="primary" id="again">Start a new session</button></div>';
+   d.querySelector("#again").onclick=async function(){await api().reset_station();counting=false;closeModal();$("msg").textContent="";await poll()};
+  }catch(e){
+   d.innerHTML='<h2>Could not finish</h2><div class="b err">'+esc(e.message||e)+'</div><div class="f"><button class="primary" id="c">Close</button></div>';
+   d.querySelector("#c").onclick=function(){counting=false;closeModal()};
+  }
+ },1000);
+}
+
+/* ---------------- MARS login ---------------- */
+function showConnect(){
+ if(modal)return;
+ var d=openModal('<h2 class="n">Connect to MARS</h2><div class="b"><div class="muted">Uses the shared account. The password is only stored if you tick the box (Windows Credential Manager).</div><div class="field"><label>Username</label><input type="text" id="u"></div><div class="field"><label>Password</label><input type="password" id="p"></div><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="rm" checked> Remember on this PC</label><div class="err" id="er"></div></div><div class="f"><button class="ghost" id="x">Cancel</button><button class="primary" id="go">Connect</button></div>');
+ d.querySelector("#x").onclick=closeModal;
+ d.querySelector("#go").onclick=async function(){
+  var b=this;b.disabled=true;b.textContent="Connecting...";
+  var r=await api().connect(d.querySelector("#u").value,d.querySelector("#p").value,d.querySelector("#rm").checked);
+  if(r.ok){closeModal();poll()}else{d.querySelector("#er").textContent=r.error;b.disabled=false;b.textContent="Connect"}
+ };
+ setTimeout(function(){d.querySelector("#u").focus()},30);
+}
+
+/* ---------------- wiring ---------------- */
+function init(){
+ Array.prototype.forEach.call($("seg").children,function(b){b.onclick=function(){switchTo(b.dataset.st)}});
+ $("scan").addEventListener("keydown",function(e){if(e.key==="Enter"){var v=this.value;this.value="";if(!modal&&!counting)doScan(v)}});
+ $("scan").addEventListener("blur",focusScan);
+ $("so").addEventListener("change",function(){api().set_so(this.value)});
+ $("btnRefresh").onclick=async function(){await api().refresh();poll()};
+ $("btnConnect").onclick=showConnect;
+ $("btnReset").onclick=async function(){await api().reset_station();$("msg").textContent="";poll()};
+ poll();setInterval(poll,2500);focusScan();
+}
+window.addEventListener("pywebviewready",init);
+})();
+</script>
+</body></html>

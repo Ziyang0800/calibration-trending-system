@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block subtitle %}Edit calibration{% endblock %}
+{% block content %}
+
+<h2>Edit calibration</h2>
+
+{% if error %}
+<div class="panel" style="border-color:var(--warn); color:var(--warn); margin-bottom:20px;">{{ error }}</div>
+{% endif %}
+
+<div class="panel">
+  <form method="post" enctype="multipart/form-data">
+    <p><label>Date of calibration<br><input type="date" name="cal_date" value="{{ cal.cal_date }}" required></label></p>
+    <p><label>Measured value (ohms)<br><input type="number" step="any" name="measured_value" value="{{ cal.measured_value }}" required></label></p>
+    <p><label>MU (relative, e.g. 9.7e-7)<br><input type="text" name="mu_relative" value="{{ cal.mu_relative }}" required></label></p>
+    <p><label>Reviewer comment / justification<br>
+      <textarea name="reviewer_comment" placeholder="e.g. Confirmed re-measurement after sensor cable fault - excluded from trend.">{{ cal.reviewer_comment or '' }}</textarea>
+    </label></p>
+    <p>
+      <label>Evaluation report / attachment (optional)<br>
+      <input type="file" name="reviewer_attachment"></label>
+      {% if cal.reviewer_attachment_path %}
+      <span style="font-size:13px;">
+        Current: <a href="{{ url_for('view_attachment', calibration_id=cal.id) }}" target="_blank">{{ cal.reviewer_attachment_path | basename }}</a>
+        &nbsp;&nbsp;
+        <label style="display:inline; font-weight:normal;"><input type="checkbox" name="remove_attachment"> remove it</label>
+      </span>
+      <br><span style="font-size:12px; color:var(--ink-dim);">Choosing a new file above replaces the current one.</span>
+      {% endif %}
+    </p>
+    <p class="checkbox-row">
+      <input type="checkbox" id="excluded" name="excluded_from_regression" {{ 'checked' if cal.excluded_from_regression }}>
+      <label for="excluded" style="margin:0;">Exclude this point from the regression trend (verified outlier — it still shows in the history and chart, just doesn't influence the fit)</label>
+    </p>
+    <button class="btn" type="submit">Save</button>
+    <a class="btn" style="border-color:var(--ink-dim); color:var(--ink-dim);" href="{{ url_for('asset_detail', asset_id=cal.asset_id) }}">Cancel</a>
+  </form>
+</div>
+
+<h3>Delete this calibration</h3>
+<div class="panel" style="border-color:var(--warn);">
+  <p style="color:var(--warn);">Permanently removes this single calibration row. This cannot be undone.</p>
+  <form method="post" action="{{ url_for('calibration_delete', calibration_id=cal.id) }}"
+        onsubmit="return confirm('Delete the {{ cal.cal_date }} calibration? This cannot be undone.');">
+    <button class="btn" type="submit" style="border-color:var(--warn); color:var(--warn);">Delete calibration</button>
+  </form>
+</div>
+
+{% endblock %}

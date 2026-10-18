@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Calibration Trending{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f5f2;
+    --panel: #ffffff;
+    --ink: #1c232c;
+    --ink-dim: #5c6773;
+    --line: #dcdcd5;
+    --steel: #2f5f7a;
+    --steel-dim: #6a95ab;
+    --ok: #3d7a4f;
+    --warn: #b4530f;
+    --insufficient: #9a9186;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .mono { font-family: 'IBM Plex Mono', 'Consolas', monospace; }
+  header.site {
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+    padding: 18px 32px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+  header.site .mark {
+    width: 10px; height: 10px;
+    background: var(--steel);
+    display: inline-block;
+    transform: rotate(45deg);
+  }
+  header.site h1 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: 0.01em;
+  }
+  header.site a { color: var(--ink); text-decoration: none; }
+  header.site .sub { color: var(--ink-dim); font-size: 13px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px; }
+  h2 { font-size: 20px; font-weight: 600; margin: 0 0 4px 0; }
+  h3 { font-size: 15px; font-weight: 600; margin: 32px 0 12px 0; color: var(--ink-dim); }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 20px 24px;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left;
+    font-weight: 500;
+    font-size: 12.5px;
+    color: var(--ink-dim);
+    border-bottom: 1px solid var(--line);
+    padding: 8px 12px;
+  }
+  td {
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+  }
+  tr:hover td { background: #fafaf8; }
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; }
+  .status-ok .status-dot { background: var(--ok); }
+  .status-out_of_trend .status-dot { background: var(--warn); }
+  .status-insufficient_data .status-dot { background: var(--insufficient); }
+  .status-ok { color: var(--ok); }
+  .status-out_of_trend { color: var(--warn); }
+  .status-insufficient_data { color: var(--insufficient); }
+  .stat-row { display: flex; gap: 32px; margin-bottom: 24px; }
+  .stat { }
+  .stat .num { font-family: 'IBM Plex Mono', monospace; font-size: 28px; font-weight: 500; }
+  .stat .label { font-size: 12.5px; color: var(--ink-dim); }
+  .btn {
+    display: inline-block;
+    border: 1px solid var(--steel);
+    color: var(--steel);
+    background: none;
+    padding: 7px 14px;
+    font-size: 13.5px;
+    font-family: inherit;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .btn:hover { background: var(--steel); color: white; }
+  dl.identity { display: grid; grid-template-columns: auto 1fr; gap: 6px 20px; margin: 0; }
+  dl.identity dt { color: var(--ink-dim); font-size: 13px; }
+  dl.identity dd { margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 14px; }
+  .num-cell { font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; white-space: nowrap; }
+  .flag { font-size: 12px; padding: 1px 6px; border: 1px solid currentColor; }
+  th.num, td.num-cell { text-align: right; }
+  tbody tr.clickable { cursor: pointer; }
+  tbody tr.clickable:hover td { color: var(--steel); }
+  label { font-size: 13px; color: var(--ink-dim); display: block; margin-bottom: 4px; }
+  input[type="text"], input[type="number"], input[type="date"], input[type="file"], textarea {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 14px;
+    padding: 7px 10px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--ink);
+    width: 320px;
+    max-width: 100%;
+  }
+  textarea { width: 480px; height: 70px; }
+  form p { margin: 0 0 16px 0; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; }
+  .checkbox-row label { margin: 0; }
+  tr.row-out-of-trend td { background: rgba(180, 83, 15, 0.06); }
+  tr.row-excluded td { background: rgba(154, 145, 134, 0.08); color: var(--ink-dim); }
+  table.sortable thead th[data-sort] { cursor: pointer; user-select: none; }
+  table.sortable thead th[data-sort]:hover { color: var(--steel); }
+  .sort-indicator { font-size: 10px; color: var(--steel); }
+</style>
+</head>
+<body>
+<header class="site">
+  <span class="mark"></span>
+  <h1><a href="{{ url_for('dashboard') }}">Calibration Trending</a></h1>
+  <span class="sub">{% block subtitle %}{% endblock %}</span>
+  <span style="margin-left:auto;">
+    <a href="{{ url_for('import_form') }}" class="btn" style="padding:5px 12px; font-size:13px;">Import Certificate</a>
+  </span>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('table.sortable').forEach(table => {
+    const allHeaders = Array.from(table.querySelectorAll('thead th'));
+    allHeaders.forEach((th) => {
+      if (!th.dataset.sort) return;
+      th.addEventListener('click', () => {
+        const type = th.dataset.sort;
+        const idx = allHeaders.indexOf(th);
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const asc = th.dataset.dir !== 'asc';
+
+        allHeaders.forEach(h => { delete h.dataset.dir; h.querySelector('.sort-indicator')?.remove(); });
+        th.dataset.dir = asc ? 'asc' : 'desc';
+        const indicator = document.createElement('span');
+        indicator.className = 'sort-indicator';
+        indicator.textContent = asc ? ' \u25B2' : ' \u25BC';
+        th.appendChild(indicator);
+
+        rows.sort((a, b) => {
+          const cellA = a.children[idx], cellB = b.children[idx];
+          let av = cellA.dataset.value !== undefined ? cellA.dataset.value : cellA.textContent.trim();
+          let bv = cellB.dataset.value !== undefined ? cellB.dataset.value : cellB.textContent.trim();
+          if (type === 'number') {
+            av = parseFloat(String(av).replace(/,/g, '')); if (isNaN(av)) av = -Infinity;
+            bv = parseFloat(String(bv).replace(/,/g, '')); if (isNaN(bv)) bv = -Infinity;
+          }
+          if (av < bv) return asc ? -1 : 1;
+          if (av > bv) return asc ? 1 : -1;
+          return 0;
+        });
+        rows.forEach(r => tbody.appendChild(r));
+      });
+    });
+  });
+});
+</script>
+</body>
+</html>

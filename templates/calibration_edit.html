@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block subtitle %}Edit Calibration{% endblock %}
+{% block content %}
+
+<div style="max-width: 680px; margin: 0 auto;">
+  <div style="margin-bottom: 20px;">
+    <h2 style="font-size:22px; font-weight:700; margin:0 0 4px 0; color:var(--primary);">
+      Edit Calibration Event
+    </h2>
+    <p style="color:var(--ink-muted); margin:0; font-size:13.5px;">Update measurement data, location, adjustment status, or reviewer justification.</p>
+  </div>
+
+  {% if error %}
+  <div class="panel" style="border-color:var(--warn); background:var(--warn-bg); color:var(--warn); padding:14px; margin-bottom:20px; font-size:13.5px;">
+    <strong>Error:</strong> {{ error }}
+  </div>
+  {% endif %}
+
+  <div class="panel">
+    <form method="post" enctype="multipart/form-data">
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+        <p>
+          <label style="font-weight:600;">Date of Calibration</label>
+          <input type="date" name="cal_date" value="{{ cal.cal_date }}" required style="width:100%; margin-top:4px;">
+        </p>
+        <p>
+          <label style="font-weight:600;">Certificate Number</label>
+          <input type="text" name="cert_number" value="{{ cal.cert_number or '' }}" placeholder="e.g. WO-01468931" style="width:100%; margin-top:4px;">
+        </p>
+      </div>
+
+      <!-- MULTI-TEST POINT INPUT GRID (AC Dividers & 33622A) -->
+      {% if test_point_readings and test_point_readings|length > 1 %}
+      <div style="margin: 16px 0; padding: 16px; background: var(--panel-subtle); border-radius: var(--radius-sm); border: 1px solid var(--line);">
+        <label style="font-weight:700; color:var(--primary); font-size:13px; margin-bottom:10px; display:block;">
+          Characterized Test Point Readings ({{ test_point_readings|length }} Points)
+        </label>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+          {% for tpr in test_point_readings %}
+          <div>
+            <label style="font-weight:600; font-size:12px; color:var(--ink-muted);">{{ tpr.point_name }}</label>
+            <input type="number" step="any" name="tp_meas_{{ tpr.tp_id }}" value="{{ tpr.measured_value }}" required style="width:100%; margin-top:3px;">
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <!-- SINGLE POINT INPUT (Resistors & Fluke 732A/C) -->
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+        <p>
+          <label style="font-weight:600;">Measured Value</label>
+          <input type="number" step="any" name="measured_value" value="{{ cal.measured_value }}" required style="width:100%; margin-top:4px;">
+        </p>
+        <p>
+          <label style="font-weight:600;">Expanded Uncertainty</label>
+          <input type="text" name="mu_relative" value="{{ cal.mu_relative }}" required style="width:100%; margin-top:4px;">
+        </p>
+      </div>
+      {% endif %}
+
+      <!-- Dedicated Fields for 732A -->
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-top:8px; padding:12px; background:var(--panel-subtle); border-radius:var(--radius-sm);">
+        <p style="margin:0;">
+          <label style="font-weight:600; font-size:12px;">Calibration Location (Fluke 732A/C)</label>
+          <input type="text" name="location" value="{{ cal.location or '' }}" placeholder="e.g. Roseville, Loveland" style="width:100%; margin-top:4px;">
+        </p>
+        <p style="margin:0;">
+          <label style="font-weight:600; font-size:12px;">Ambient Pressure (hPa)</label>
+          <input type="number" step="any" name="pressure_hpa" value="{{ cal.pressure_hpa or '' }}" placeholder="e.g. 1013" style="width:100%; margin-top:4px;">
+        </p>
+      </div>
+
+      <p style="margin-top:16px;">
+        <label style="font-weight:600;">Reviewer Comment / Engineering Justification</label>
+        <textarea name="reviewer_comment" placeholder="Document investigation, root cause, or acceptance notes..." style="width:100%; height:80px; margin-top:4px;">{{ cal.reviewer_comment or '' }}</textarea>
+        <span style="font-size:11.5px; color:var(--ink-faint);">Adding a note marks out-of-trend anomalies as 'Reviewed' for quality records.</span>
+      </p>
+
+      <p>
+        <label style="font-weight:600;">Evaluation Report / Supporting Attachment</label>
+        <input type="file" name="reviewer_attachment" style="width:100%; margin-top:4px;">
+        {% if cal.reviewer_attachment_path %}
+        <div style="font-size:12px; margin-top:6px; color:var(--ink-muted);">
+          Current: <a href="{{ url_for('view_attachment', calibration_id=cal.id) }}" target="_blank"><strong>{{ cal.reviewer_attachment_path | basename }}</strong></a>
+          &nbsp;&nbsp;
+          <label style="display:inline; font-weight:normal; margin:0;"><input type="checkbox" name="remove_attachment"> remove</label>
+        </div>
+        {% endif %}
+      </p>
+
+      <p>
+        <label style="font-weight:600;">Reference URL (QR Code on PDF Report)</label>
+        <input type="text" name="reviewer_url" value="{{ cal.reviewer_url or '' }}" placeholder="https://..." style="width:100%; margin-top:4px;">
+      </p>
+
+      <div style="display:flex; flex-direction:column; gap:10px; margin-top:16px; padding:12px; background:var(--panel-subtle); border-radius:var(--radius-sm);">
+        <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer;">
+          <input type="checkbox" name="is_adjusted" {{ 'checked' if cal.is_adjusted }}>
+          <span style="font-size:13px; font-weight:500;">Instrument was Adjusted during this calibration (Resets regression epoch for 33622A)</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer;">
+          <input type="checkbox" name="excluded_from_regression" {{ 'checked' if cal.excluded_from_regression }}>
+          <span style="font-size:13px; font-weight:500;">Manually exclude this point from regression trend fit (Verified outlier)</span>
+        </label>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-top:24px; padding-top:16px; border-top:1px solid var(--line);">
+        <button class="btn btn-primary" type="submit">Save Calibration</button>
+        <a class="btn" href="{{ url_for('asset_detail', asset_id=cal.asset_id) }}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}

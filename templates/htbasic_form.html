@@ -1,0 +1,580 @@
+{% extends "base.html" %}
+{% block subtitle %}Generate Cal. Factor Files{% endblock %}
+{% block content %}
+
+<style>
+  .htbasic-header { margin-bottom: 24px; }
+  .htbasic-header h2 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0 0 6px 0;
+    color: var(--primary);
+  }
+  .htbasic-header p {
+    color: var(--ink-muted);
+    font-size: 13.5px;
+    margin: 0;
+  }
+
+  /* Hardware Station Cards (Station 1 & Station 2) */
+  .selection-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .station-card {
+    background: var(--panel);
+    border: 2px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 16px 20px;
+    cursor: pointer;
+    transition: all 0.2s var(--ease-spring);
+    user-select: none;
+    position: relative;
+  }
+  .station-card:hover {
+    border-color: var(--primary-accent);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-elevated);
+  }
+  .station-card.selected {
+    border-color: var(--primary);
+    background: #fcfdfe;
+    box-shadow: var(--shadow-glow);
+  }
+  .station-card input[type="radio"] {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+  }
+  .station-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Selection Cards Grid */
+  .resistor-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-bottom: 24px;
+  }
+  .resistor-card {
+    background: var(--panel);
+    border: 2px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: all 0.2s var(--ease-spring);
+    position: relative;
+    user-select: none;
+  }
+  .resistor-card:hover {
+    border-color: var(--primary-accent);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-card);
+  }
+  .resistor-card.selected {
+    border-color: var(--primary-accent);
+    background: #eff6ff;
+    box-shadow: 0 0 0 1px var(--primary-accent);
+  }
+  .resistor-card input[type="radio"] {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+  }
+
+  /* Manifest Checklist */
+  .manifest-card {
+    background: var(--panel-subtle);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 16px 20px;
+    margin-bottom: 24px;
+  }
+  .manifest-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-muted);
+    margin-bottom: 12px;
+  }
+  .manifest-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    font-size: 12.5px;
+  }
+  .manifest-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Pre-Flight Category Switcher Pills */
+  .preflight-tabs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .preflight-pill {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+  }
+  .preflight-pill:hover, .preflight-pill.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+
+  /* Pre-Flight Audit Table */
+  .audit-table-container {
+    max-height: 520px;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--panel);
+    box-shadow: var(--shadow-card);
+    margin-bottom: 24px;
+  }
+  .audit-table { width: 100%; border-collapse: collapse; }
+  .audit-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #f8fafc;
+    box-shadow: 0 1px 0 var(--line);
+    padding: 9.5px 12px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .audit-table tbody td {
+    padding: 8px 12px;
+    font-size: 12.5px;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line-subtle);
+  }
+  .audit-section-header td {
+    background: #f1f5f9;
+    font-weight: 700;
+    font-size: 11.5px;
+    color: var(--primary);
+    padding: 7px 12px;
+    letter-spacing: 0.02em;
+  }
+
+  .rx-tag-chip {
+    display: inline-block;
+    padding: 1px 6px;
+    background: #f1f5f9;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--primary);
+  }
+</style>
+
+<div class="htbasic-header">
+  <h2>Generate HTBasic 3458A Calibration Factor Files</h2>
+  <p>
+    Pre-flight audit of all reference standards, AC voltage dividers, and waveform generator factors compiled into the HP 3458A automation files.
+  </p>
+</div>
+
+{% if problems %}
+<div class="panel" style="border-color:var(--warn); background:var(--warn-bg); padding:16px; margin-bottom:24px;">
+  <div style="display:flex; align-items:center; gap:8px; font-weight:700; color:var(--warn); margin-bottom:8px;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+    Cannot Generate Package — Missing Calibration Data
+  </div>
+  <table>
+    <thead><tr><th>Standard / Range</th><th>Equipment ID</th><th>Issue Description</th></tr></thead>
+    <tbody>
+      {% for p in problems %}
+      <tr>
+        <td class="mono" style="font-weight:600;">{{ p.nominal }}</td>
+        <td class="mono">{{ p.asset_number }}</td>
+        <td style="color:var(--warn); font-weight:600;">{{ p.issue }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('htbasic_generate') }}">
+  
+  <!-- STEP 1: Select Target Station -->
+  <label style="font-weight:700; font-size:13.5px; color:var(--primary); margin-bottom:8px; display:block;">
+    Step 1: Select Target Test Station &amp; Station Factor File
+  </label>
+  
+  <div class="selection-grid">
+    <div class="station-card selected" onclick="selectStation('Set 1', this)">
+      <input type="radio" name="set_name" value="Set 1" checked>
+      <div class="station-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+        Station 1 (Set 1)
+      </div>
+      <div style="font-size:12.5px; color:var(--ink-muted); line-height:1.5;">
+        Compiles target station file <strong><code>286300.txt</code></strong>, Set 1 standard resistors (1 Ω – 1 GΩ), Set 1 AC Dividers into <strong><code>DIVMEANS.TXT</code></strong>, and the selected 33622A factor file.
+      </div>
+    </div>
+
+    <div class="station-card" onclick="selectStation('Set 2', this)">
+      <input type="radio" name="set_name" value="Set 2">
+      <div class="station-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+        Station 2 (Set 2)
+      </div>
+      <div style="font-size:12.5px; color:var(--ink-muted); line-height:1.5;">
+        Compiles target station file <strong><code>286325.txt</code></strong>, Set 2 standard resistors (1 Ω – 1 GΩ), Set 2 AC Dividers into <strong><code>DIVMEANS.TXT</code></strong>, and the selected 33622A factor file.
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2: Select 0.1 Ohm Reference Resistor -->
+  <label style="font-weight:700; font-size:13.5px; color:var(--primary); margin-bottom:8px; display:block;">
+    Step 2: Select 0.1 Ω Station Reference Standard
+  </label>
+
+  <div class="resistor-cards-grid">
+    {% for pn, label in zero_pt_one_options.items() %}
+    {% set d = (zero_pt_one_details or {}).get(pn, {}) %}
+    <div class="resistor-card {{ 'selected' if pn == zero_pt_one_pn else '' }}" onclick="selectResistor('{{ pn }}', this)"
+         data-pn="{{ pn }}" data-serial="{{ d.serial or '—' }}" 
+         data-val="{{ '%.8f'|format(d.last_measured) if d.last_measured else 'Missing' }}" 
+         data-date="{{ d.last_date or '—' }}">
+      <input type="radio" name="zero_pt_one_pn" value="{{ pn }}" {{ 'checked' if pn == zero_pt_one_pn else '' }}>
+      <div style="font-weight:700; font-size:14px; color:var(--primary); margin-bottom:4px;">
+        {{ pn }}
+      </div>
+      <div style="font-size:12px; color:var(--ink-muted); margin-bottom:8px;">
+        Serial: <strong>{{ d.serial or '—' }}</strong> · {{ d.set_id or '—' }}
+      </div>
+      <div style="padding-top:8px; border-top:1px dashed var(--line); font-size:12px;">
+        <div style="color:var(--ink-muted);">Live Calibrated Value:</div>
+        <div class="mono" style="font-weight:700; font-size:13px; color:var(--primary);">
+          {% if d.last_measured %}
+            {{ '%.8f'|format(d.last_measured) }} Ω
+          {% else %}
+            <span style="color:var(--warn);">No history</span>
+          {% endif %}
+        </div>
+        <div style="font-size:11px; color:var(--ink-faint); margin-top:2px;">
+          Cal Date: {{ d.last_date or '—' }}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- STEP 3: Select 33622A Waveform Generator (Title is Equipment ID / Trace ID) -->
+  <label style="font-weight:700; font-size:13.5px; color:var(--primary); margin-bottom:8px; display:block;">
+    Step 3: Select 33622A Waveform Generator Reference Standard
+  </label>
+
+  <div class="resistor-cards-grid">
+    {% for sn, item in wfg_options.items() %}
+    {% set d = (wfg_details or {}).get(sn, {}) %}
+    <div class="resistor-card {{ 'selected' if sn == wfg_serial else '' }}" onclick="selectWfg('{{ sn }}', '{{ item.file_id }}', this)"
+         data-pn="{{ d.trace_id or item.pn }}" data-serial="{{ sn }}" 
+         data-file="{{ item.file_id }}_Extended.txt"
+         data-date="{{ d.last_date or '—' }}">
+      <input type="radio" name="wfg_serial" value="{{ sn }}" {{ 'checked' if sn == wfg_serial else '' }}>
+      <div style="font-weight:700; font-size:14px; color:var(--primary); margin-bottom:4px;">
+        {{ d.trace_id or item.pn }}
+      </div>
+      <div style="font-size:12px; color:var(--ink-muted); margin-bottom:8px;">
+        Serial: <strong>{{ sn }}</strong> · {{ d.set_id or item.default_set }}
+      </div>
+      <div style="padding-top:8px; border-top:1px dashed var(--line); font-size:12px;">
+        <div style="color:var(--ink-muted);">Target File: <strong>{{ item.file_id }}_Extended.txt</strong></div>
+        <div style="font-size:11px; color:var(--ink-faint); margin-top:4px;">
+          Cal Date: {{ d.last_date or '—' }}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Package Manifest Checklist (7 Files) -->
+  <div class="manifest-card">
+    <div class="manifest-title">Package Manifest (7 Production Files Generated into .zip)</div>
+    <div class="manifest-list">
+      <div class="manifest-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span><strong>RESNOM.txt</strong> (Nominal standards: 1Ω, 10M, 100M, 1G)</span>
+      </div>
+      <div class="manifest-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span><strong>RESVALUE.TXT</strong> (Transfer standards: 10Ω – 10kΩ)</span>
+      </div>
+      <div class="manifest-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span><strong>HIGHRES.txt</strong> (100kΩ standards)</span>
+      </div>
+      <div class="manifest-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span><strong>ONEMEG.txt</strong> (1MΩ standards)</span>
+      </div>
+      <div class="manifest-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span><strong id="stationManifestFile">286300.txt</strong> (Station calibration factor)</span>
+      </div>
+      <div class="manifest-item">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span><strong>DIVMEANS.TXT</strong> (AC Dividers: 10mV &amp; 100mV ratios)</span>
+      </div>
+      <div class="manifest-item" style="grid-column: span 2;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span><strong id="wfgManifestFile">902470_Extended.txt</strong> (33622A 11 cf Data points)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 4: Comprehensive Pre-Flight Verification Table -->
+  <div class="panel-header" style="margin-bottom:8px;">
+    <h3 class="panel-title">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+      Pre-Flight Verification (All Test Points for Selected Package)
+    </h3>
+    <span style="font-size:12px; color:var(--ink-muted);">Complete audit of every test point compiled into this package</span>
+  </div>
+
+  <!-- Category View Switcher -->
+  <div class="preflight-tabs">
+    <button type="button" class="preflight-pill active" onclick="filterPreflight('all', this)">All Standards (34 Points)</button>
+    <button type="button" class="preflight-pill" onclick="filterPreflight('resistor', this)">Standard Resistors (11)</button>
+    <button type="button" class="preflight-pill" onclick="filterPreflight('divider', this)">AC Dividers (12)</button>
+    <button type="button" class="preflight-pill" onclick="filterPreflight('wfg', this)">33622A Generator (11)</button>
+  </div>
+
+  <div class="audit-table-container">
+    <table class="sortable audit-table">
+      <thead>
+        <tr>
+          <th data-sort="text">Target File</th>
+          <th data-sort="text">Rx# / Test Point</th>
+          <th class="num" data-sort="number">Nominal / Range</th>
+          <th data-sort="text">Equipment ID</th>
+          <th data-sort="text">Serial</th>
+          <th class="num" data-sort="number">Live Calibrated Value</th>
+          <th data-sort="text">Cal Date</th>
+        </tr>
+      </thead>
+      <tbody id="auditTableBody">
+        
+        <!-- SECTION A: STANDARD RESISTORS (0.1 Ohm to 1 GOhm) -->
+        <tr class="audit-section-header" data-section="resistor">
+          <td colspan="7">📁 SECTION 1: REFERENCE STANDARD RESISTORS (0.1 Ω – 1 GΩ)</td>
+        </tr>
+
+        <!-- Dynamic 0.1 Ohm Station Standard -->
+        <tr class="preflight-row" data-section="resistor" style="background:#eff6ff; font-weight:600;">
+          <td class="mono" style="font-weight:700;" id="dynStationFile">286300.txt</td>
+          <td><span class="rx-tag-chip" style="background:#dbeafe; color:#1d4ed8;">0.1 Ω Std</span></td>
+          <td class="num-cell right">0.1 Ω</td>
+          <td class="num-cell" style="color:var(--primary); font-weight:700;" id="dynStationPn">PN010034</td>
+          <td class="num-cell" id="dynStationSerial">—</td>
+          <td class="num-cell right" style="color:var(--primary);" id="dynStationVal">—</td>
+          <td class="num-cell" id="dynStationDate">—</td>
+        </tr>
+
+        <!-- Resistors Ascending: 1 Ohm to 1 GOhm -->
+        {% for r in (all_resistors or []) %}
+        <tr class="preflight-row audit-row" data-section="resistor" data-resistor-set="{{ r.set }}" style="{{ 'display:none;' if r.set != 'Set 1' else '' }}">
+          <td class="mono" style="font-weight:700;">{{ r.file }}</td>
+          <td><span class="rx-tag-chip">{{ r.rx_tag }}</span></td>
+          <td class="num-cell right">{{ r.nominal }}</td>
+          <td class="num-cell" style="color:var(--primary); font-weight:600;">{{ r.pn }}</td>
+          <td class="num-cell">{{ r.serial }}</td>
+          <td class="num-cell right" data-value="{{ r.measured_value if r.measured_value is not none else '' }}">
+            {% if r.measured_value is not none %}
+              {{ '%.8f'|format(r.measured_value) }} Ω
+            {% else %}
+              <span style="color:var(--warn); font-weight:700;">Missing</span>
+            {% endif %}
+          </td>
+          <td class="num-cell">{{ r.cal_date }}</td>
+        </tr>
+        {% endfor %}
+
+        <!-- SECTION B: AC VOLTAGE DIVIDERS (DIVMEANS.TXT - All 12 Frequency Points) -->
+        <tr class="audit-section-header" data-section="divider">
+          <td colspan="7">📁 SECTION 2: AC VOLTAGE DIVIDERS (DIVMEANS.TXT — 10mV &amp; 100mV across 6 Frequencies)</td>
+        </tr>
+
+        {% for dp in (divider_test_points or []) %}
+        <tr class="preflight-row div-point-row" data-section="divider" data-divider-set="{{ dp.set }}" style="{{ 'display:none;' if dp.set != 'Set 1' else '' }}">
+          <td class="mono" style="font-weight:700;">DIVMEANS.TXT</td>
+          <td><span class="rx-tag-chip">{{ dp.rx_tag }}</span></td>
+          <td class="num-cell right">{{ dp.nominal }}</td>
+          <td class="num-cell" style="color:var(--primary); font-weight:600;">{{ dp.pn }}</td>
+          <td class="num-cell">{{ dp.serial }}</td>
+          <td class="num-cell right">
+            {% if dp.measured_value is not none %}
+              {{ '%.5f'|format(dp.measured_value) }}
+            {% else %}
+              <span style="color:var(--warn); font-weight:700;">Missing</span>
+            {% endif %}
+          </td>
+          <td class="num-cell">{{ dp.cal_date }}</td>
+        </tr>
+        {% endfor %}
+
+        <!-- SECTION C: 33622A WAVEFORM GENERATOR (90xxxx_Extended.txt - All 11 cf Points) -->
+        <tr class="audit-section-header" data-section="wfg">
+          <td colspan="7">📁 SECTION 3: 33622A WAVEFORM GENERATOR (<span id="dynWfgHeaderTitle">902470_Extended.txt</span> — 11 cf Data Points)</td>
+        </tr>
+
+        {% for sn, pts in (wfg_all_points or {}).items() %}
+          {% for pt in pts %}
+          <tr class="preflight-row wfg-point-row" data-section="wfg" data-wfg-serial="{{ sn }}" style="{{ 'display:none;' if sn != 'SG53800187' else '' }}">
+            <td class="mono" style="font-weight:700;">{{ pt.file }}</td>
+            <td><span class="rx-tag-chip" style="background:#e0e7ff; color:#3730a3;">{{ pt.rx_tag }}</span></td>
+            <td class="num-cell right">{{ pt.nominal }}</td>
+            <td class="num-cell" style="color:var(--primary); font-weight:600;">{{ pt.pn }}</td>
+            <td class="num-cell">{{ pt.serial }}</td>
+            <td class="num-cell right">
+              {% if pt.measured_value is not none %}
+                {{ '%+.5f'|format(pt.measured_value) }} dB
+              {% else %}
+                <span style="color:var(--warn); font-weight:700;">Missing</span>
+              {% endif %}
+            </td>
+            <td class="num-cell">{{ pt.cal_date }}</td>
+          </tr>
+          {% endfor %}
+        {% endfor %}
+
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Generate Button -->
+  <div>
+    <button class="btn btn-primary" type="submit" style="padding:10px 24px; font-size:14px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      Generate &amp; Download HTBasic Package (.zip)
+    </button>
+  </div>
+</form>
+
+<script>
+let currentSet = 'Set 1';
+let currentWfgSerial = 'SG53800187';
+let activePreflightFilter = 'all';
+
+function selectStation(setName, el) {
+  currentSet = setName;
+  document.querySelectorAll('.station-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  el.querySelector('input[type="radio"]').checked = true;
+
+  document.getElementById('dynStationFile').textContent = (setName === 'Set 1') ? '286300.txt' : '286325.txt';
+  document.getElementById('stationManifestFile').textContent = (setName === 'Set 1') ? '286300.txt' : '286325.txt';
+
+  applyPreflightFilters();
+}
+
+function selectResistor(pn, el) {
+  document.querySelectorAll('.resistor-cards-grid .resistor-card').forEach(c => {
+    if (c.querySelector('input[name="zero_pt_one_pn"]')) c.classList.remove('selected');
+  });
+  el.classList.add('selected');
+  el.querySelector('input[type="radio"]').checked = true;
+
+  // Update dynamic 0.1 Ohm row
+  document.getElementById('dynStationPn').textContent = pn;
+  document.getElementById('dynStationSerial').textContent = el.dataset.serial;
+  document.getElementById('dynStationVal').textContent = el.dataset.val + ' Ω';
+  document.getElementById('dynStationDate').textContent = el.dataset.date;
+}
+
+function selectWfg(sn, fileId, el) {
+  currentWfgSerial = sn;
+  document.querySelectorAll('.resistor-cards-grid .resistor-card').forEach(c => {
+    if (c.querySelector('input[name="wfg_serial"]')) c.classList.remove('selected');
+  });
+  el.classList.add('selected');
+  el.querySelector('input[type="radio"]').checked = true;
+
+  document.getElementById('wfgManifestFile').textContent = fileId + '_Extended.txt';
+  document.getElementById('dynWfgHeaderTitle').textContent = fileId + '_Extended.txt';
+
+  applyPreflightFilters();
+}
+
+function filterPreflight(category, btn) {
+  activePreflightFilter = category;
+  document.querySelectorAll('.preflight-tabs .preflight-pill').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyPreflightFilters();
+}
+
+function applyPreflightFilters() {
+  // 1. Resistors Filter
+  document.querySelectorAll('.audit-row').forEach(row => {
+    const rowSet = row.dataset.resistorSet;
+    const matchCat = (activePreflightFilter === 'all' || activePreflightFilter === 'resistor');
+    row.style.display = (matchCat && rowSet === currentSet) ? '' : 'none';
+  });
+
+  const dynRow = document.getElementById('dynStationFile')?.closest('tr');
+  if (dynRow) {
+    dynRow.style.display = (activePreflightFilter === 'all' || activePreflightFilter === 'resistor') ? '' : 'none';
+  }
+
+  // 2. Dividers Filter
+  document.querySelectorAll('.div-point-row').forEach(row => {
+    const rowSet = row.dataset.dividerSet;
+    const matchCat = (activePreflightFilter === 'all' || activePreflightFilter === 'divider');
+    row.style.display = (matchCat && rowSet === currentSet) ? '' : 'none';
+  });
+
+  // 3. WFG 11 Points Filter
+  document.querySelectorAll('.wfg-point-row').forEach(row => {
+    const rowSn = row.dataset.wfgSerial;
+    const matchCat = (activePreflightFilter === 'all' || activePreflightFilter === 'wfg');
+    row.style.display = (matchCat && rowSn === currentWfgSerial) ? '' : 'none';
+  });
+
+  // Section Headers
+  document.querySelectorAll('.audit-section-header').forEach(header => {
+    const sec = header.dataset.section;
+    header.style.display = (activePreflightFilter === 'all' || activePreflightFilter === sec) ? '' : 'none';
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const activeRes = document.querySelector('input[name="zero_pt_one_pn"]:checked')?.closest('.resistor-card');
+  if (activeRes) selectResistor(activeRes.dataset.pn, activeRes);
+
+  const activeWfg = document.querySelector('input[name="wfg_serial"]:checked')?.closest('.resistor-card');
+  if (activeWfg) selectWfg(activeWfg.dataset.serial, activeWfg.dataset.file.replace('_Extended.txt', ''), activeWfg);
+
+  applyPreflightFilters();
+});
+</script>
+
+{% endblock %}

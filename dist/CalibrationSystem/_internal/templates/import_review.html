@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block subtitle %}Review before import{% endblock %}
+{% block content %}
+
+<h2>Review before importing</h2>
+<p style="color:var(--ink-dim);">{{ original_filename }}</p>
+
+{% if warnings %}
+<div class="panel" style="border-color:var(--warn); margin-bottom:20px;">
+  {% for w in warnings %}
+  <p style="color:var(--warn); margin:4px 0;">⚠ {{ w }}</p>
+  {% endfor %}
+  <p style="margin:8px 0 0 0; font-size:13px; color:var(--ink-dim);">
+    Double-check these values against the certificate before confirming.</p>
+</div>
+{% endif %}
+
+<div class="panel">
+  <dl class="identity">
+    <dt>Asset</dt><dd>{{ asset.model or asset.serial }} ({{ asset.serial }})</dd>
+    <dt>PN / EQ</dt><dd>{{ asset.asset_number or '—' }}</dd>
+    <dt>Nominal</dt><dd>{{ asset.nominal_ohms }} Ω</dd>
+    <dt>Date of Calibration</dt><dd>{{ cal_date }}</dd>
+    <dt>Measured Value</dt><dd>{{ '%.9f'|format(measured_value) }} Ω</dd>
+    <dt>MU (relative)</dt><dd>{{ '%.4e'|format(mu_relative) }}</dd>
+  </dl>
+</div>
+
+<div style="margin-top:20px; display:flex; gap:12px;">
+  <form action="{{ url_for('import_confirm') }}" method="post">
+    <input type="hidden" name="token" value="{{ token }}">
+    <input type="hidden" name="asset_id" value="{{ asset.id }}">
+    <input type="hidden" name="asset_serial" value="{{ asset.serial }}">
+    <input type="hidden" name="cal_date" value="{{ cal_date }}">
+    <input type="hidden" name="measured_value" value="{{ measured_value }}">
+    <input type="hidden" name="mu_relative" value="{{ mu_relative }}">
+    <input type="hidden" name="cert_number" value="{{ cert_number }}">
+    <button class="btn" type="submit">Confirm &amp; Import</button>
+  </form>
+  <form action="{{ url_for('import_cancel') }}" method="post">
+    <input type="hidden" name="token" value="{{ token }}">
+    <button class="btn" type="submit" style="border-color:var(--ink-dim); color:var(--ink-dim);">Cancel</button>
+  </form>
+</div>
+
+{% endblock %}
