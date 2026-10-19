@@ -1,10 +1,11 @@
 /**
  * app.js - Complete Studio Application Controller for pywebview
- * Built-in zero-dependency Metrology Canvas Charting Engine
+ * Built-in zero-dependency Metrology Canvas Charting Engine with Interactive Hover
  */
 
 let activeAssetDetail = null;
 let currentChartMode = 'primary';
+let hoveredPoint = null;
 
 const router = {
   current: 'dashboard',
@@ -110,7 +111,7 @@ function renderDashboard(data) {
   });
 
   return `
-    <div style="padding: 24px; max-width: 1480px; margin: 0 auto;">
+    <div style="max-width: 1480px; margin: 0 auto;">
       <!-- KPI Metric Cards -->
       <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px;">
         <div class="panel" style="margin:0; padding:16px; border-top:3px solid var(--primary);">
@@ -269,25 +270,26 @@ function formatVal(a) {
 }
 
 // -----------------------------------------------------------------------------
-// 2. ASSET DETAIL & BUILT-IN OFFLINE CANVAS CHART ENGINE
+// 2. ASSET DETAIL & INTERACTIVE CANVAS CHART WITH HOVER & CROSSHAIR
 // -----------------------------------------------------------------------------
 async function loadAssetDetail(id, tpId) {
   const root = document.getElementById('appRoot');
   const d = await window.pywebview.api.get_asset_detail(id, tpId);
   activeAssetDetail = d;
+  hoveredPoint = null;
 
   root.innerHTML = `
-    <div style="padding: 24px; max-width: 1480px; margin: 0 auto;">
+    <div style="max-width: 1480px; margin: 0 auto;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
         <button class="btn" onclick="router.navigate('dashboard')">← Return to Dashboard</button>
         <button class="btn" onclick="exportCurrentExcel(${d.asset.id})">Export Excel</button>
       </div>
 
       <!-- Hero Banner -->
-      <div class="panel" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+      <div class="panel" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
         <div>
-          <h2 style="margin:0 0 4px 0; color:var(--primary); font-size:22px;">${d.asset.model || d.asset.serial}</h2>
-          <div style="font-size:12.5px; color:var(--ink-muted); display:flex; gap:10px;">
+          <h2 style="margin:0 0 4px 0; color:var(--primary); font-size:20px;">${d.asset.model || d.asset.serial}</h2>
+          <div style="font-size:12px; color:var(--ink-muted); display:flex; gap:10px;">
             <span>Equipment ID: <strong>${d.asset.asset_number || '—'}</strong></span>
             <span>·</span>
             <span>Serial: <strong class="mono" style="background:#f1f5f9; padding:1px 6px; border-radius:4px;">${d.asset.serial}</strong></span>
@@ -301,10 +303,10 @@ async function loadAssetDetail(id, tpId) {
 
       <!-- Multi-Point Matrix -->
       ${d.test_points && d.test_points.length > 1 ? `
-        <div class="panel" style="margin-bottom:20px;">
+        <div class="panel" style="margin-bottom:16px;">
           <div class="panel-header">
             <h3 class="panel-title">Characterized Test Points Matrix (${d.test_points.length} Series)</h3>
-            <span style="font-size:12px; color:var(--ink-muted);">Click any row to switch active curve below</span>
+            <span style="font-size:11.5px; color:var(--ink-muted);">Click any row to switch active curve below</span>
           </div>
           <div class="table-container" style="box-shadow:none; margin:0;">
             <table>
@@ -328,7 +330,7 @@ async function loadAssetDetail(id, tpId) {
                     <td class="num-cell right">${tp.latest_value !== null ? Number(tp.latest_value).toFixed(5) + ' ' + tp.unit : '—'}</td>
                     <td class="num-cell right">${tp.drift !== null ? (tp.drift > 0 ? '+' : '') + Number(tp.drift).toFixed(4) : '—'}</td>
                     <td class="num-cell">${tp.latest_date || '—'}</td>
-                    <td><span class="badge ${tp.status === 'ok' ? 'badge-ok' : 'badge-warn'}">${tp.status === 'ok' ? 'In Trend' : 'Out of Trend'}</span></td>
+                    <td><span class="badge ${tp.status === 'ok' ? 'badge-ok' : (tp.status === 'reviewed_out_of_trend' ? 'badge-reviewed' : 'badge-warn')}">${tp.status === 'ok' ? 'In Trend' : (tp.status === 'reviewed_out_of_trend' ? 'Reviewed' : 'Out of Trend')}</span></td>
                     <td>
                       <button class="btn ${tp.id === d.active_test_point_id ? 'btn-primary' : ''}" style="padding:1px 8px; font-size:11px;">
                         ${tp.id === d.active_test_point_id ? 'Active' : 'View'}
@@ -343,10 +345,10 @@ async function loadAssetDetail(id, tpId) {
       ` : ''}
 
       <!-- 2-Column Info & Specs -->
-      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:20px;">
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:16px;">
         <div class="panel" style="margin:0;">
           <div class="panel-header"><h3 class="panel-title">Active Characterization Series</h3></div>
-          <div style="display:grid; grid-template-columns: auto 1fr; gap:8px 20px; font-size:12.5px;">
+          <div style="display:grid; grid-template-columns: auto 1fr; gap:6px 16px; font-size:12px;">
             <span style="color:var(--ink-muted);">Series:</span><strong>${d.active_test_point ? d.active_test_point.point_name : d.asset.nominal_ohms + ' Ω'}</strong>
             <span style="color:var(--ink-muted);">Records:</span><strong>${d.calibrations.length} calibrations</strong>
             ${d.trend ? `
@@ -360,42 +362,41 @@ async function loadAssetDetail(id, tpId) {
         <div class="panel" style="margin:0;">
           <div class="panel-header"><h3 class="panel-title">Stability &amp; Environmental Telemetry</h3></div>
           ${d.stability ? `
-            <div style="font-size:12.5px;">
+            <div style="font-size:12px;">
               <div>Spec: <strong>${d.stability.spec_description}</strong></div>
-              <div style="margin-top:6px;">Observed drift across ${d.stability.elapsed_days} days: <strong>${d.stability.observed_drift_ppm.toFixed(2)} ppm</strong> (Limit: ±${d.stability.allowance_ppm.toFixed(2)} ppm)</div>
-              <!-- High-Contrast Precision Gauge -->
-              <div style="margin-top:14px;">
+              <div style="margin-top:4px;">Observed drift across ${d.stability.elapsed_days} days: <strong>${d.stability.observed_drift_ppm.toFixed(2)} ppm</strong> (Limit: ±${d.stability.allowance_ppm.toFixed(2)} ppm)</div>
+              <div style="margin-top:12px;">
                 <div style="display:flex; justify-content:space-between; font-size:10px; font-family:monospace; font-weight:700; color:var(--ink-faint); margin-bottom:2px;">
                   <span>-${d.stability.allowance_ppm.toFixed(2)} ppm</span>
                   <span>0 ppm</span>
                   <span>+${d.stability.allowance_ppm.toFixed(2)} ppm</span>
                 </div>
-                <div style="height:12px; background:#e2e8f0; border:1px solid #cbd5e1; border-radius:999px; position:relative;">
+                <div style="height:10px; background:#e2e8f0; border:1px solid #cbd5e1; border-radius:999px; position:relative;">
                   <div style="position:absolute; left:50%; top:0; bottom:0; width:2px; background:#475569; transform:translateX(-50%);"></div>
                   <div style="position:absolute; left:0; right:0; top:0; bottom:0; background:rgba(5, 150, 105, 0.15); border-radius:999px;"></div>
-                  <div style="position:absolute; left:${Math.min(98, Math.max(2, 50 + (d.stability.observed_drift_ppm / d.stability.allowance_ppm) * 50))}%; top:50%; width:14px; height:14px; border-radius:50%; transform:translate(-50%, -50%); background:${d.stability.exceeds ? '#d97706' : '#059669'}; border:2px solid #ffffff; box-shadow:0 1px 4px rgba(0,0,0,0.3);"></div>
+                  <div style="position:absolute; left:${Math.min(98, Math.max(2, 50 + (d.stability.observed_drift_ppm / d.stability.allowance_ppm) * 50))}%; top:50%; width:12px; height:12px; border-radius:50%; transform:translate(-50%, -50%); background:${d.stability.exceeds ? '#d97706' : '#059669'}; border:2px solid #ffffff;"></div>
                 </div>
               </div>
             </div>
           ` : (d.asset.category === 'dcv_reference' ? `
-            <div style="font-size:12.5px;">
-              <p style="margin:0 0 8px 0; color:var(--ink-muted);">Fluke 732A/C altitude pressure sensitivity (~ -2.5 to -3 nV/hPa). Elevation difference between Loveland (~845 hPa) and Roseville (~1013 hPa) creates step shifts.</p>
+            <div style="font-size:12px;">
+              <p style="margin:0 0 6px 0; color:var(--ink-muted);">Fluke 732A/C altitude sensitivity (~ -2.5 to -3 nV/hPa). Active Roseville epoch isolated from Loveland step shifts.</p>
               ${d.calibrations.length > 0 && d.calibrations[d.calibrations.length - 1].pressure_hpa ? `
-                <div style="padding:8px 12px; background:var(--panel-subtle); border-radius:6px; border:1px solid var(--line); font-family:monospace;">
+                <div style="padding:6px 10px; background:var(--panel-subtle); border-radius:6px; border:1px solid var(--line); font-family:monospace;">
                   Ambient: <strong>${d.calibrations[d.calibrations.length - 1].pressure_hpa} hPa</strong> · Facility: <strong>${d.calibrations[d.calibrations.length - 1].location || 'Roseville'}</strong>
                 </div>
               ` : ''}
             </div>
           ` : `
-            <div style="font-size:12.5px; color:var(--ink-muted); padding:12px 0;">
+            <div style="font-size:12px; color:var(--ink-muted); padding:8px 0;">
               Continuous multi-year regression active across all historical observations.
             </div>
           `)}
         </div>
       </div>
 
-      <!-- Trend Canvas with 95% Shading -->
-      <div class="panel" style="margin-bottom:20px;">
+      <!-- Trend Canvas with 95% Shading & Interactive Hover Crosshair -->
+      <div class="panel" style="margin-bottom:16px;">
         <div class="panel-header">
           <h3 class="panel-title">Regression Trend &amp; 95% Prediction Interval: ${d.active_test_point ? d.active_test_point.point_name : d.asset.model}</h3>
           <div style="display:flex; gap:4px; background:var(--track); padding:2px; border-radius:6px;">
@@ -404,13 +405,15 @@ async function loadAssetDetail(id, tpId) {
           </div>
         </div>
         <div style="position:relative; width:100%; height:320px;">
-          <canvas id="desktopTrendCanvas" style="width:100%; height:100%;"></canvas>
+          <canvas id="desktopTrendCanvas" style="width:100%; height:100%; cursor:crosshair;"></canvas>
+          <!-- Floating Dark Telemetry Tooltip -->
+          <div id="canvasHoverTooltip" style="display:none; position:absolute; pointer-events:none; z-index:20; background:#0a192f; color:#fff; padding:10px 14px; border-radius:8px; border:1px solid #334155; box-shadow:0 10px 25px rgba(0,0,0,0.3); font-size:11.5px; min-width:190px;"></div>
         </div>
       </div>
 
       <!-- Calibration History Table (Zero Overflow) -->
       <div class="panel-header" style="margin-bottom:8px;"><h3 class="panel-title">Calibration History: ${d.active_test_point ? d.active_test_point.point_name : 'Readings'}</h3></div>
-      <div class="table-container" style="max-height:500px; overflow-y:auto;">
+      <div class="table-container" style="max-height:460px; overflow-y:auto;">
         <table>
           <thead style="position:sticky; top:0; z-index:10; background:#f8fafc;">
             <tr>
@@ -462,184 +465,277 @@ async function loadAssetDetail(id, tpId) {
     </div>
   `;
 
-  drawOfflineTrendCanvas(d, currentChartMode);
+// Wait for DOM reflow so canvas has full width and height
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      setupInteractiveCanvas(d, currentChartMode);
+    }, 50);
+  });
 }
 
 // -----------------------------------------------------------------------------
-// STANDALONE 100% OFFLINE HTML5 CANVAS CHART ENGINE (ZERO CDN DEPENDENCIES)
+// STANDALONE 100% OFFLINE INTERACTIVE CANVAS CHART WITH HOVER & CROSSHAIR
 // -----------------------------------------------------------------------------
-function drawOfflineTrendCanvas(d, mode) {
+function setupInteractiveCanvas(d, mode) {
   const canvas = document.getElementById('desktopTrendCanvas');
+  const tooltip = document.getElementById('canvasHoverTooltip');
   if (!canvas) return;
 
-  const ctx = canvas.getContext('2d');
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * window.devicePixelRatio;
-  canvas.height = rect.height * window.devicePixelRatio;
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  function renderChart() {
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * window.devicePixelRatio;
+    canvas.height = rect.height * window.devicePixelRatio;
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
 
-  const w = rect.width;
-  const h = rect.height;
-  const padding = { top: 20, right: 30, bottom: 40, left: 75 };
+    const w = rect.width;
+    const h = rect.height;
+    const padding = { top: 20, right: 30, bottom: 35, left: 75 };
 
-  const isPrimary = (mode === 'primary');
-  const cals = d.calibrations || [];
-  if (cals.length === 0) return;
+    const isPrimary = (mode === 'primary');
+    const cals = d.calibrations || [];
+    if (cals.length === 0) return;
 
-  // Extract points
-  const points = cals.map(c => ({
-    x: c.accumulated_days,
-    y: isPrimary ? c.measured_value : c.error_ppm,
-    pred: isPrimary ? c.predicted : (c.predicted ? c.error_ppm : null),
-    lower: isPrimary ? c.lower : null,
-    upper: isPrimary ? c.upper : null,
-    status: c.display_status,
-    adj: c.is_adjusted,
-    raw: c
-  }));
+    const points = cals.map(c => ({
+      x: c.accumulated_days,
+      y: isPrimary ? c.measured_value : c.error_ppm,
+      pred: isPrimary ? c.predicted : (c.predicted ? c.error_ppm : null),
+      lower: isPrimary ? c.lower : null,
+      upper: isPrimary ? c.upper : null,
+      status: c.display_status,
+      adj: c.is_adjusted,
+      raw: c
+    }));
 
-  // Min and Max calculations
-  const allX = points.map(p => p.x);
-  const allY = points.flatMap(p => [p.y, p.pred, p.lower, p.upper]).filter(v => v !== null && v !== undefined && !isNaN(v));
+    const allX = points.map(p => p.x);
+    const allY = points.flatMap(p => [p.y, p.pred, p.lower, p.upper]).filter(v => v !== null && v !== undefined && !isNaN(v));
 
-  const minX = Math.min(...allX, 0);
-  const maxX = Math.max(...allX, 100);
-  let minY = Math.min(...allY);
-  let maxY = Math.max(...allY);
+    const minX = Math.min(...allX, 0);
+    const maxX = Math.max(...allX, 100);
+    let minY = Math.min(...allY);
+    let maxY = Math.max(...allY);
 
-  const yRange = (maxY - minY) || 0.0001;
-  minY -= yRange * 0.08;
-  maxY += yRange * 0.08;
+    const yRange = (maxY - minY) || 0.0001;
+    minY -= yRange * 0.08;
+    maxY += yRange * 0.08;
 
-  const toScreenX = (x) => padding.left + ((x - minX) / ((maxX - minX) || 1)) * (w - padding.left - padding.right);
-  const toScreenY = (y) => h - padding.bottom - ((y - minY) / ((maxY - minY) || 1)) * (h - padding.top - padding.bottom);
+    const toScreenX = (x) => padding.left + ((x - minX) / ((maxX - minX) || 1)) * (w - padding.left - padding.right);
+    const toScreenY = (y) => h - padding.bottom - ((y - minY) / ((maxY - minY) || 1)) * (h - padding.top - padding.bottom);
 
-  // Clear background
-  ctx.clearRect(0, 0, w, h);
+    ctx.clearRect(0, 0, w, h);
 
-  // Draw Gridlines
-  ctx.strokeStyle = '#f1f5f9';
-  ctx.lineWidth = 1;
-  const gridRows = 5;
-  ctx.fillStyle = '#64748b';
-  ctx.font = '10px "IBM Plex Mono", monospace';
-  ctx.textAlign = 'right';
+    // Draw Gridlines
+    ctx.strokeStyle = '#f1f5f9';
+    ctx.lineWidth = 1;
+    const gridRows = 5;
+    ctx.fillStyle = '#64748b';
+    ctx.font = '10px "IBM Plex Mono", monospace';
+    ctx.textAlign = 'right';
 
-  for (let i = 0; i <= gridRows; i++) {
-    const yVal = minY + (i / gridRows) * (maxY - minY);
-    const sy = toScreenY(yVal);
-    ctx.beginPath();
-    ctx.moveTo(padding.left, sy);
-    ctx.lineTo(w - padding.right, sy);
-    ctx.stroke();
+    for (let i = 0; i <= gridRows; i++) {
+      const yVal = minY + (i / gridRows) * (maxY - minY);
+      const sy = toScreenY(yVal);
+      ctx.beginPath();
+      ctx.moveTo(padding.left, sy);
+      ctx.lineTo(w - padding.right, sy);
+      ctx.stroke();
 
-    const label = isPrimary ? yVal.toFixed(d.asset.unit === 'V' ? 7 : (d.asset.unit === 'dB' ? 4 : 5)) : yVal.toFixed(2);
-    ctx.fillText(label, padding.left - 8, sy + 3);
-  }
-
-  // Draw Shaded 95% Prediction Interval Polygon
-  const validLimits = points.filter(p => p.lower !== null && p.upper !== null);
-  if (validLimits.length > 1) {
-    ctx.fillStyle = 'rgba(59, 130, 246, 0.12)'; // Shading
-    ctx.beginPath();
-    // Move along upper bound
-    validLimits.forEach((p, i) => {
-      const sx = toScreenX(p.x);
-      const sy = toScreenY(p.upper);
-      if (i === 0) ctx.moveTo(sx, sy);
-      else ctx.lineTo(sx, sy);
-    });
-    // Move backwards along lower bound
-    for (let i = validLimits.length - 1; i >= 0; i--) {
-      const p = validLimits[i];
-      ctx.lineTo(toScreenX(p.x), toScreenY(p.lower));
+      const label = isPrimary ? yVal.toFixed(d.asset.unit === 'V' ? 7 : (d.asset.unit === 'dB' ? 4 : 5)) : yVal.toFixed(2);
+      ctx.fillText(label, padding.left - 8, sy + 3);
     }
-    ctx.closePath();
-    ctx.fill();
 
-    // Draw Upper & Lower Limit Lines
-    ctx.strokeStyle = '#93c5fd';
+    // Shaded 95% Prediction Interval Band
+    const validLimits = points.filter(p => p.lower !== null && p.upper !== null);
+    if (validLimits.length > 1) {
+      ctx.fillStyle = 'rgba(59, 130, 246, 0.12)';
+      ctx.beginPath();
+      validLimits.forEach((p, i) => {
+        const sx = toScreenX(p.x);
+        const sy = toScreenY(p.upper);
+        if (i === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      });
+      for (let i = validLimits.length - 1; i >= 0; i--) {
+        ctx.lineTo(toScreenX(validLimits[i].x), toScreenY(validLimits[i].lower));
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      // Lines
+      ctx.strokeStyle = '#93c5fd';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      validLimits.forEach((p, i) => {
+        const sx = toScreenX(p.x);
+        const sy = toScreenY(p.upper);
+        if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      });
+      ctx.stroke();
+
+      ctx.beginPath();
+      validLimits.forEach((p, i) => {
+        const sx = toScreenX(p.x);
+        const sy = toScreenY(p.lower);
+        if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      });
+      ctx.stroke();
+
+      // Dashed Prediction Line
+      ctx.strokeStyle = '#64748b';
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      validLimits.forEach((p, i) => {
+        const sx = toScreenX(p.x);
+        const sy = toScreenY(p.pred);
+        if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Baseline
+    ctx.strokeStyle = '#cbd5e1';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    validLimits.forEach((p, i) => {
-      const sx = toScreenX(p.x);
-      const sy = toScreenY(p.upper);
-      if (i === 0) ctx.moveTo(sx, sy);
-      else ctx.lineTo(sx, sy);
-    });
+    ctx.moveTo(padding.left, h - padding.bottom);
+    ctx.lineTo(w - padding.right, h - padding.bottom);
     ctx.stroke();
 
-    ctx.beginPath();
-    validLimits.forEach((p, i) => {
-      const sx = toScreenX(p.x);
-      const sy = toScreenY(p.lower);
-      if (i === 0) ctx.moveTo(sx, sy);
-      else ctx.lineTo(sx, sy);
-    });
-    ctx.stroke();
-
-    // Draw Dashed Prediction Center Line
-    ctx.strokeStyle = '#64748b';
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    validLimits.forEach((p, i) => {
-      const sx = toScreenX(p.x);
-      const sy = toScreenY(p.pred);
-      if (i === 0) ctx.moveTo(sx, sy);
-      else ctx.lineTo(sx, sy);
-    });
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  // Draw X Axis Baseline
-  ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(padding.left, h - padding.bottom);
-  ctx.lineTo(w - padding.right, h - padding.bottom);
-  ctx.stroke();
-
-  // X Axis Labels
-  ctx.fillStyle = '#64748b';
-  ctx.textAlign = 'center';
-  const xSteps = 5;
-  for (let i = 0; i <= xSteps; i++) {
-    const xVal = minX + (i / xSteps) * (maxX - minX);
-    const sx = toScreenX(xVal);
-    ctx.fillText(`${Math.round(xVal)} d`, sx, h - padding.bottom + 16);
-  }
-
-  // Draw Measured Scatter Points
-  points.forEach(p => {
-    if (p.y === null || isNaN(p.y)) return;
-    const sx = toScreenX(p.x);
-    const sy = toScreenY(p.y);
-
-    let color = '#0a192f'; // Navy
-    if (p.status === 'reviewed_out_of_trend') color = '#1d4ed8'; // Blue
-    else if (p.status === 'out_of_trend') color = '#d97706'; // Amber
-
-    ctx.fillStyle = color;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
-
-    if (p.adj) {
-      // Rotated square/diamond for calibration adjustment
-      ctx.save();
-      ctx.translate(sx, sy);
-      ctx.rotate(Math.PI / 4);
-      ctx.fillRect(-4.5, -4.5, 9, 9);
-      ctx.strokeRect(-4.5, -4.5, 9, 9);
-      ctx.restore();
-    } else {
-      // Circle
-      ctx.beginPath();
-      ctx.arc(sx, sy, 5.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+    // X Axis Labels
+    ctx.fillStyle = '#64748b';
+    ctx.textAlign = 'center';
+    const xSteps = 5;
+    for (let i = 0; i <= xSteps; i++) {
+      const xVal = minX + (i / xSteps) * (maxX - minX);
+      const sx = toScreenX(xVal);
+      ctx.fillText(`${Math.round(xVal)} d`, sx, h - padding.bottom + 15);
     }
-  });
+
+    // Crosshair Line on Hover
+    if (hoveredPoint) {
+      const hx = toScreenX(hoveredPoint.x);
+      ctx.strokeStyle = 'rgba(37, 99, 235, 0.4)';
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(hx, padding.top);
+      ctx.lineTo(hx, h - padding.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Measured Scatter Points
+    points.forEach(p => {
+      if (p.y === null || isNaN(p.y)) return;
+      const sx = toScreenX(p.x);
+      const sy = toScreenY(p.y);
+
+      let color = '#0a192f';
+      if (p.status === 'reviewed_out_of_trend') color = '#1d4ed8';
+      else if (p.status === 'out_of_trend') color = '#d97706';
+
+      ctx.fillStyle = color;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+
+      const isHovered = (hoveredPoint && hoveredPoint.raw.id === p.raw.id);
+
+      if (p.adj) {
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillRect(-4.5, -4.5, 9, 9);
+        ctx.strokeRect(-4.5, -4.5, 9, 9);
+        ctx.restore();
+      } else {
+        ctx.beginPath();
+        ctx.arc(sx, sy, isHovered ? 7.5 : 5.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      if (isHovered) {
+        ctx.strokeStyle = 'rgba(37, 99, 235, 0.5)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 10, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    });
+
+    return { points, toScreenX, toScreenY, padding, w, h };
+  }
+
+  const chartMeta = renderChart();
+
+  // ATTACH INTERACTIVE MOUSEMOVE & HOVER ENGINE
+  canvas.onmousemove = function (e) {
+    if (!chartMeta) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    let closest = null;
+    let minDist = 20;
+
+    chartMeta.points.forEach(p => {
+      const px = chartMeta.toScreenX(p.x);
+      const py = chartMeta.toScreenY(p.y);
+      const dist = Math.hypot(mx - px, my - py);
+      if (dist < minDist) {
+        minDist = dist;
+        closest = p;
+      }
+    });
+
+    if (closest !== hoveredPoint) {
+      hoveredPoint = closest;
+      renderChart();
+    }
+
+    if (hoveredPoint && tooltip) {
+      const c = hoveredPoint.raw;
+      const unit = d.asset.unit || '';
+      tooltip.style.display = 'block';
+      tooltip.style.left = `${Math.min(mx + 15, chartMeta.w - 220)}px`;
+      tooltip.style.top = `${Math.max(my - 70, 10)}px`;
+      tooltip.innerHTML = `
+        <div style="font-weight:700; color:#cbd5e1; border-bottom:1px solid #334155; padding-bottom:4px; margin-bottom:6px;">
+          ${c.date} (Day ${c.accumulated_days})
+        </div>
+        <div style="display:flex; justify-content:space-between; gap:12px;">
+          <span style="color:#94a3b8;">Measured:</span>
+          <strong class="mono" style="color:#fff;">${Number(c.measured_value).toFixed(unit === 'V' ? 8 : 5)} ${unit}</strong>
+        </div>
+        ${c.predicted ? `
+          <div style="display:flex; justify-content:space-between; gap:12px; color:#cbd5e1;">
+            <span style="color:#94a3b8;">Predicted:</span>
+            <span class="mono">${Number(c.predicted).toFixed(unit === 'V' ? 8 : 5)}</span>
+          </div>
+        ` : ''}
+        ${c.lower && c.upper ? `
+          <div style="color:#93c5fd; font-size:10.5px; margin-top:3px; font-family:monospace;">
+            Limits: [${Number(c.lower).toFixed(unit === 'V' ? 7 : 5)} ↔ ${Number(c.upper).toFixed(unit === 'V' ? 7 : 5)}]
+          </div>
+        ` : ''}
+        ${c.pressure_hpa ? `
+          <div style="color:#94a3b8; font-size:10.5px; margin-top:4px; border-top:1px dashed #334155; padding-top:4px;">
+            Pressure: ${c.pressure_hpa} hPa ${c.location ? `(${c.location})` : ''}
+          </div>
+        ` : ''}
+        ${c.display_status === 'reviewed_out_of_trend' ? `
+          <div style="color:#60a5fa; font-weight:700; font-size:10.5px; margin-top:3px;">✓ Reviewed by Metrologist</div>
+        ` : ''}
+      `;
+    } else if (tooltip) {
+      tooltip.style.display = 'none';
+    }
+  };
+
+  canvas.onmouseleave = function () {
+    hoveredPoint = null;
+    if (tooltip) tooltip.style.display = 'none';
+    renderChart();
+  };
 }
 
 function switchChartMode(mode) {
@@ -668,7 +764,6 @@ async function openEditCalibrationModal(calId) {
   document.getElementById('editCalAdj').checked = Boolean(cal.is_adjusted);
   document.getElementById('editCalExcl').checked = Boolean(cal.excluded_from_regression);
 
-  // If DCV reference, show location & pressure
   const isDcv = Boolean(cal.location || cal.pressure_hpa);
   document.getElementById('editDcvContainer').style.display = isDcv ? 'grid' : 'none';
   if (isDcv) {
@@ -676,7 +771,6 @@ async function openEditCalibrationModal(calId) {
     document.getElementById('editCalPress').value = cal.pressure_hpa || '';
   }
 
-  // If multi-point test readings exist, render individual fields
   const tpCont = document.getElementById('editTestPointsContainer');
   const tpGrid = document.getElementById('editTestPointsGrid');
   if (cal.test_point_readings && cal.test_point_readings.length > 1) {
@@ -756,7 +850,7 @@ function closeNoteModal(e) {
 }
 
 // -----------------------------------------------------------------------------
-// 4. HTBASIC CAL FACTOR STUDIO (ALL 34 TEST POINTS)
+// 4. HTBASIC CAL FACTOR STUDIO (ALL 34 TEST POINTS COMPLETE)
 // -----------------------------------------------------------------------------
 let selectedSet = 'Set 1';
 let selected01Ohm = 'PN010034';
@@ -768,66 +862,66 @@ async function loadHTBasic() {
   const d = await window.pywebview.api.get_htbasic_context(selectedSet, selected01Ohm, selectedWfg);
 
   root.innerHTML = `
-    <div style="padding: 24px; max-width: 1360px; margin: 0 auto;">
-      <button class="btn" onclick="router.navigate('dashboard')" style="margin-bottom:16px;">← Back to Dashboard</button>
-      <div class="panel" style="margin-bottom:20px;">
-        <h2 style="margin:0 0 6px 0; color:var(--primary); font-size:22px;">Generate HTBasic 3458A Calibration Factor Files</h2>
-        <p style="font-size:13px; color:var(--ink-muted); margin:0;">Target Station 1 &amp; Station 2 automated file compilation with pre-flight standards verification.</p>
+    <div style="max-width: 1360px; margin: 0 auto;">
+      <button class="btn" onclick="router.navigate('dashboard')" style="margin-bottom:14px;">← Back to Dashboard</button>
+      <div class="panel" style="margin-bottom:16px;">
+        <h2 style="margin:0 0 4px 0; color:var(--primary); font-size:20px;">Generate HTBasic 3458A Calibration Factor Files</h2>
+        <p style="font-size:12.5px; color:var(--ink-muted); margin:0;">Station 1 &amp; Station 2 automated file compilation with pre-flight standards verification.</p>
       </div>
 
       <!-- STEP 1: Station Selector Cards -->
-      <label style="font-weight:700; font-size:13px; color:var(--primary); margin-bottom:8px; display:block;">Step 1: Select Target Test Station &amp; Station File</label>
-      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:20px;">
-        <div class="panel" style="margin:0; cursor:pointer; border:2px solid ${selectedSet === 'Set 1' ? 'var(--primary)' : 'var(--line)'}; ${selectedSet === 'Set 1' ? 'background:#fcfdfe;' : ''}" onclick="setStation('Set 1')">
-          <div style="font-weight:700; font-size:15px; color:var(--primary); margin-bottom:4px;">Station 1 (Set 1)</div>
-          <div style="font-size:12.5px; color:var(--ink-muted);">Compiles target station file <strong>286300.txt</strong>, Set 1 standard resistors (1 Ω – 1 GΩ), Set 1 AC Dividers into <strong>DIVMEANS.TXT</strong>, and selected 33622A factor file.</div>
+      <label style="font-weight:700; font-size:12.5px; color:var(--primary); margin-bottom:6px; display:block;">Step 1: Select Target Test Station &amp; Station File</label>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin-bottom:16px;">
+        <div class="panel ${selectedSet === 'Set 1' ? 'selected' : ''}" style="margin:0; cursor:pointer; border:2px solid ${selectedSet === 'Set 1' ? 'var(--primary)' : 'var(--line)'}; ${selectedSet === 'Set 1' ? 'background:#fcfdfe;' : ''}" onclick="setStation('Set 1')">
+          <div style="font-weight:700; font-size:14.5px; color:var(--primary); margin-bottom:3px;">Station 1 (Set 1)</div>
+          <div style="font-size:12px; color:var(--ink-muted);">Compiles target station file <strong>286300.txt</strong>, Set 1 standard resistors (1 Ω – 1 GΩ), Set 1 AC Dividers into <strong>DIVMEANS.TXT</strong>, and selected 33622A factor file.</div>
         </div>
-        <div class="panel" style="margin:0; cursor:pointer; border:2px solid ${selectedSet === 'Set 2' ? 'var(--primary)' : 'var(--line)'}; ${selectedSet === 'Set 2' ? 'background:#fcfdfe;' : ''}" onclick="setStation('Set 2')">
-          <div style="font-weight:700; font-size:15px; color:var(--primary); margin-bottom:4px;">Station 2 (Set 2)</div>
-          <div style="font-size:12.5px; color:var(--ink-muted);">Compiles target station file <strong>286325.txt</strong>, Set 2 standard resistors (1 Ω – 1 GΩ), Set 2 AC Dividers into <strong>DIVMEANS.TXT</strong>, and selected 33622A factor file.</div>
+        <div class="panel ${selectedSet === 'Set 2' ? 'selected' : ''}" style="margin:0; cursor:pointer; border:2px solid ${selectedSet === 'Set 2' ? 'var(--primary)' : 'var(--line)'}; ${selectedSet === 'Set 2' ? 'background:#fcfdfe;' : ''}" onclick="setStation('Set 2')">
+          <div style="font-weight:700; font-size:14.5px; color:var(--primary); margin-bottom:3px;">Station 2 (Set 2)</div>
+          <div style="font-size:12px; color:var(--ink-muted);">Compiles target station file <strong>286325.txt</strong>, Set 2 standard resistors (1 Ω – 1 GΩ), Set 2 AC Dividers into <strong>DIVMEANS.TXT</strong>, and selected 33622A factor file.</div>
         </div>
       </div>
 
       <!-- STEP 2: 0.1 Ohm Reference Resistor Selector -->
-      <label style="font-weight:700; font-size:13px; color:var(--primary); margin-bottom:8px; display:block;">Step 2: Select 0.1 Ω Station Reference Standard</label>
-      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:14px; margin-bottom:20px;">
+      <label style="font-weight:700; font-size:12.5px; color:var(--primary); margin-bottom:6px; display:block;">Step 2: Select 0.1 Ω Station Reference Standard</label>
+      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:16px;">
         ${['PN010034', 'EQ358990', 'PN010069'].map(pn => {
           const resD = d.zero_pt_one_details[pn] || {};
           return `
             <div class="panel" style="margin:0; cursor:pointer; border:2px solid ${selected01Ohm === pn ? 'var(--primary-accent)' : 'var(--line)'}; ${selected01Ohm === pn ? 'background:#eff6ff;' : ''}" onclick="set01Ohm('${pn}')">
-              <div style="font-weight:700; font-size:14px; color:var(--primary);">${pn}</div>
-              <div style="font-size:12px; color:var(--ink-muted); margin-bottom:8px;">Serial: <strong>${resD.serial || '—'}</strong> · ${resD.set_id || '—'}</div>
-              <div style="font-size:12px; border-top:1px dashed var(--line); padding-top:6px;">
+              <div style="font-weight:700; font-size:13.5px; color:var(--primary);">${pn}</div>
+              <div style="font-size:11.5px; color:var(--ink-muted); margin-bottom:6px;">Serial: <strong>${resD.serial || '—'}</strong> · ${resD.set_id || '—'}</div>
+              <div style="font-size:11.5px; border-top:1px dashed var(--line); padding-top:4px;">
                 <div style="color:var(--ink-faint);">Live Value: <strong class="mono" style="color:var(--primary);">${resD.last_measured ? Number(resD.last_measured).toFixed(8) + ' Ω' : 'Missing'}</strong></div>
-                <div style="font-size:11px; color:var(--ink-faint);">Cal Date: ${resD.last_date || '—'}</div>
+                <div style="font-size:10.5px; color:var(--ink-faint);">Cal Date: ${resD.last_date || '—'}</div>
               </div>
             </div>
           `;
         }).join('')}
       </div>
 
-      <!-- STEP 3: 33622A Generator Selector (Equipment ID as Title) -->
-      <label style="font-weight:700; font-size:13px; color:var(--primary); margin-bottom:8px; display:block;">Step 3: Select 33622A Waveform Generator Standard</label>
-      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:14px; margin-bottom:20px;">
+      <!-- STEP 3: 33622A Waveform Generator Selector (Title is Equipment ID) -->
+      <label style="font-weight:700; font-size:12.5px; color:var(--primary); margin-bottom:6px; display:block;">Step 3: Select 33622A Waveform Generator Standard</label>
+      <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:16px;">
         ${Object.entries(d.wfg_options).map(([sn, item]) => {
           const wD = d.wfg_details[sn] || {};
           return `
             <div class="panel" style="margin:0; cursor:pointer; border:2px solid ${selectedWfg === sn ? 'var(--primary-accent)' : 'var(--line)'}; ${selectedWfg === sn ? 'background:#eff6ff;' : ''}" onclick="setWfg('${sn}')">
-              <div style="font-weight:700; font-size:14px; color:var(--primary);">${wD.trace_id || item.pn}</div>
-              <div style="font-size:12px; color:var(--ink-muted); margin-bottom:6px;">Serial: <strong>${sn}</strong> · ${wD.set_id || item.default_set}</div>
-              <div style="font-size:12px; border-top:1px dashed var(--line); padding-top:6px;">
-                <div>Target File: <strong>${item.file_id}_Extended.txt</strong></div>
-                <div style="font-size:11px; color:var(--ink-faint); margin-top:2px;">Cal Date: ${wD.last_date || '—'}</div>
+              <div style="font-weight:700; font-size:13.5px; color:var(--primary);">${wD.trace_id || item.pn}</div>
+              <div style="font-size:11.5px; color:var(--ink-muted); margin-bottom:4px;">Serial: <strong>${sn}</strong> · ${wD.set_id || item.default_set}</div>
+              <div style="font-size:11.5px; border-top:1px dashed var(--line); padding-top:4px;">
+                <div>Target: <strong>${item.file_id}_Extended.txt</strong></div>
+                <div style="font-size:10.5px; color:var(--ink-faint); margin-top:2px;">Cal Date: ${wD.last_date || '—'}</div>
               </div>
             </div>
           `;
         }).join('')}
       </div>
 
-      <!-- Package Manifest Checklist (7 Production Files) -->
-      <div style="background:var(--track); padding:16px 20px; border-radius:var(--radius-md); border:1px solid var(--line); margin-bottom:20px;">
-        <div style="font-size:12px; font-weight:700; text-transform:uppercase; color:var(--ink-muted); margin-bottom:10px;">Package Manifest (7 Production Files Compiled into .zip)</div>
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:12px;">
+      <!-- Package Manifest Checklist (7 Files) -->
+      <div style="background:var(--track); padding:12px 18px; border-radius:var(--radius-md); border:1px solid var(--line); margin-bottom:16px;">
+        <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--ink-muted); margin-bottom:8px;">Package Manifest (7 Production Files Compiled into .zip)</div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; font-size:11.5px;">
           <div>✓ <strong>RESNOM.txt</strong> (Nominal standards: 1Ω, 10M, 100M, 1G)</div>
           <div>✓ <strong>RESVALUE.TXT</strong> (Transfer standards: 10Ω – 10kΩ)</div>
           <div>✓ <strong>HIGHRES.txt</strong> (100kΩ standards)</div>
@@ -852,14 +946,14 @@ async function loadHTBasic() {
           { id: 'wfg', label: '33622A Generator (11)' }
         ].map(cat => `
           <button class="btn ${activePreflightCategory === cat.id ? 'btn-primary' : ''}" 
-                  style="border-radius:999px; font-size:11.5px; padding:3px 12px;"
+                  style="border-radius:999px; font-size:11px; padding:2px 10px;"
                   onclick="activePreflightCategory='${cat.id}'; loadHTBasic();">
             ${cat.label}
           </button>
         `).join('')}
       </div>
 
-      <div class="table-container" style="max-height:500px; overflow-y:auto; margin-bottom:20px;">
+      <div class="table-container" style="max-height:460px; overflow-y:auto; margin-bottom:16px;">
         <table>
           <thead style="position:sticky; top:0; z-index:10; background:#f8fafc;">
             <tr>
@@ -941,7 +1035,7 @@ async function loadHTBasic() {
         </table>
       </div>
 
-      <button class="btn btn-primary" onclick="generateHTBasicFiles()" style="padding:10px 24px; font-size:14px;">
+      <button class="btn btn-primary" onclick="generateHTBasicFiles()" style="padding:10px 24px; font-size:13.5px;">
         Compile &amp; Download HTBasic Package (.zip)
       </button>
     </div>

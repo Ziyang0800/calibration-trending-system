@@ -45,14 +45,17 @@ def write_json(path, obj):
 
 
 def get_local_db_path():
+    """Strictly locks to the real calibration.db in the WelcomeScreen project root."""
+    project_db = Path(__file__).resolve().parent / "calibration.db"
+    if project_db.exists():
+        print(f"--> [DATABASE ACTIVE]: {project_db}")
+        return str(project_db)
+
+    # Fallback to APPDATA only if running as a frozen PyInstaller exe
     d = data_dir()
-    db_file = d / "calibration.db"
-    # If not present in APPDATA yet, copy from current directory if available
-    if not db_file.exists():
-        src = Path("calibration.db")
-        if src.exists():
-            shutil.copy(src, db_file)
-    return str(db_file)
+    fallback_db = d / "calibration.db"
+    print(f"--> [DATABASE APPDATA FALLBACK]: {fallback_db}")
+    return str(fallback_db)
 
 
 class DatabaseSyncManager:
