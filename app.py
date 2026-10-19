@@ -14,8 +14,6 @@ import winfile
 
 
 class Api:
-    """Methods exposed directly to JavaScript via window.pywebview.api.<method>()"""
-
     def __init__(self):
         self._svc = CalibrationService()
 
@@ -25,11 +23,20 @@ class Api:
     def get_asset_detail(self, asset_id, tp_id=None):
         return self._svc.get_asset_detail(asset_id, tp_id)
 
+    def get_calibration_for_edit(self, calibration_id):
+        return self._svc.get_calibration_for_edit(calibration_id)
+
+    def save_calibration_edit(self, data):
+        return self._svc.save_calibration_edit(data)
+
     def get_htbasic_context(self, set_name="Set 1", zero_pt_one_pn="PN010034", wfg_serial="SG53800187"):
         return self._svc.get_htbasic_context(set_name, zero_pt_one_pn, wfg_serial)
 
     def generate_htbasic(self, set_name, zero_pt_one_pn, wfg_serial):
         return self._svc.generate_htbasic_zip(set_name, zero_pt_one_pn, wfg_serial)
+
+    def import_certificate(self):
+        return self._svc.import_certificate_file()
 
     def save_report(self, asset_ids=None):
         return self._svc.save_pdf_report(asset_ids)

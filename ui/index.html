@@ -7,35 +7,111 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
 <body>
 
-<!-- Desktop Header -->
+<!-- Native Desktop Header -->
 <header class="app-header">
   <div class="header-left">
-    <span class="brand-mark"></span>
+    <span class="brand-mark" onclick="router.navigate('dashboard')"></span>
     <h1 class="brand-title" onclick="router.navigate('dashboard')">Calibration Trending</h1>
     <span class="crumb-sep">/</span>
     <span class="crumb-sub" id="currentViewTitle">Fleet Overview</span>
   </div>
 
   <div class="header-right">
-    <!-- Network Sync Status Widget -->
     <div class="sync-badge" id="syncStatusBadge" onclick="app.syncNow()" title="Click to sync database now">
       <span class="sync-dot"></span>
-      <span id="syncStatusText">Network: Idle</span>
+      <span id="syncStatusText">Network Ready</span>
     </div>
-
-    <button class="btn" onclick="app.generateBatchReport()">Export Report</button>
+    <button class="btn" onclick="app.importCert()">Import Cert</button>
+    <button class="btn" onclick="app.generateBatchReport()">Export PDF Report</button>
     <button class="btn btn-primary" onclick="router.navigate('htbasic')">Cal. Factor Files</button>
   </div>
 </header>
 
 <!-- Main View Container -->
-<main id="appRoot">
-  <!-- Dynamic views (Dashboard, Asset Detail, HTBasic) injected here by app.js -->
-</main>
+<main id="appRoot"></main>
+
+<!-- Note Modal -->
+<div class="note-modal-overlay" id="noteModal" onclick="closeNoteModal(event)">
+  <div class="note-modal-card" onclick="event.stopPropagation()">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid var(--line); padding-bottom:8px;">
+      <h4 style="margin:0; font-size:15px; color:var(--primary);" id="noteModalTitle">Reviewer Note</h4>
+      <button type="button" onclick="closeNoteModal()" style="background:none; border:none; font-size:18px; cursor:pointer; color:var(--ink-faint);">&times;</button>
+    </div>
+    <p id="noteModalContent" style="font-size:13.5px; color:var(--ink); line-height:1.6; white-space:pre-wrap; margin:0 0 16px 0;"></p>
+    <div id="noteModalAttachment" style="display:none; padding-top:12px; border-top:1px dashed var(--line);">
+      <a id="noteModalAttachLink" href="#" target="_blank" class="btn btn-primary" style="font-size:12px;">
+        Open Attached Quality Report
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Calibration Modal -->
+<div class="note-modal-overlay" id="editCalModal" onclick="closeEditModal(event)">
+  <div class="note-modal-card" style="width: 580px;" onclick="event.stopPropagation()">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:1px solid var(--line); padding-bottom:10px;">
+      <h4 style="margin:0; font-size:16px; color:var(--primary);" id="editModalTitle">Edit Calibration Record</h4>
+      <button type="button" onclick="closeEditModal()" style="background:none; border:none; font-size:18px; cursor:pointer; color:var(--ink-faint);">&times;</button>
+    </div>
+
+    <form id="editCalForm" onsubmit="saveCalibrationModal(event)">
+      <input type="hidden" id="editCalId" name="id">
+      
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div>
+          <label style="font-size:11.5px; font-weight:700; color:var(--ink-muted);">Cal Date</label>
+          <input type="date" id="editCalDate" name="cal_date" required style="width:100%; margin-top:3px;">
+        </div>
+        <div>
+          <label style="font-size:11.5px; font-weight:700; color:var(--ink-muted);">Primary Reading</label>
+          <input type="number" step="any" id="editCalMeas" name="measured_value" required style="width:100%; margin-top:3px;">
+        </div>
+      </div>
+
+      <!-- Multi-Point Child Readings Container -->
+      <div id="editTestPointsContainer" style="display:none; margin-bottom:14px; padding:12px; background:var(--panel-subtle); border-radius:6px; border:1px solid var(--line);">
+        <div style="font-size:12px; font-weight:700; color:var(--primary); margin-bottom:8px;">Characterized Test Points:</div>
+        <div id="editTestPointsGrid" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;"></div>
+      </div>
+
+      <!-- Location and Pressure for 732A -->
+      <div id="editDcvContainer" style="display:none; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px; padding:10px; background:var(--panel-subtle); border-radius:6px;">
+        <div>
+          <label style="font-size:11px; font-weight:700;">Location (Roseville/Loveland)</label>
+          <input type="text" id="editCalLoc" name="location" style="width:100%; margin-top:3px;">
+        </div>
+        <div>
+          <label style="font-size:11px; font-weight:700;">Pressure (hPa)</label>
+          <input type="number" step="any" id="editCalPress" name="pressure_hpa" style="width:100%; margin-top:3px;">
+        </div>
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <label style="font-size:11.5px; font-weight:700; color:var(--ink-muted);">Reviewer Quality Note / Justification</label>
+        <textarea id="editCalComment" name="reviewer_comment" style="width:100%; height:65px; margin-top:3px; padding:8px;" placeholder="Document review notes, acceptance, or investigations..."></textarea>
+      </div>
+
+      <div style="margin-bottom:16px; display:flex; flex-direction:column; gap:6px;">
+        <label style="display:flex; align-items:center; gap:8px; font-size:12px; cursor:pointer;">
+          <input type="checkbox" id="editCalAdj" name="is_adjusted">
+          <span>Instrument was Adjusted during this calibration event</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:12px; cursor:pointer;">
+          <input type="checkbox" id="editCalExcl" name="excluded_from_regression">
+          <span>Exclude from regression trend fit (Verified outlier)</span>
+        </label>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:8px; padding-top:12px; border-top:1px solid var(--line);">
+        <button type="button" class="btn" onclick="closeEditModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>

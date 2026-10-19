@@ -4,18 +4,21 @@ Supports passive continuous standards (Resistors, Dividers, 732A) and
 active instruments with adjustments (Keysight 33622A Epoch-based reset).
 """
 
-from datetime import date
+from datetime import date, datetime
 import numpy as np
 from scipy import stats as scipy_stats
 
 
+def _iso(d):
+    if d is None:
+        return ""
+    if hasattr(d, "isoformat"):
+        return d.isoformat()[:10]
+    return str(d)[:10]
+
+
 def compute_trend(dates: list, measured_values: list, nominal: float = 0.0,
                   excluded: list = None, adjustments: list = None) -> tuple:
-    """
-    Computes linear regression and 95% Prediction Intervals.
-    If adjustments is provided (list of bool), it triggers Epoch-Reset:
-    points prior to the most recent adjustment are excluded from the active fit.
-    """
     n_total = len(dates)
     if excluded is None:
         excluded = [False] * n_total
@@ -27,43 +30,39 @@ def compute_trend(dates: list, measured_values: list, nominal: float = 0.0,
     if list(dates) != sorted(dates):
         raise ValueError("dates must be sorted ascending.")
 
-    # --- Epoch / Adjustment Handling ---
-    # Find the index of the latest calibration marked as adjusted (if any)
     latest_adj_idx = -1
     for idx, is_adj in enumerate(adjustments):
         if is_adj:
             latest_adj_idx = idx
 
-    # In-fit points must be:
-    # 1. Not manually excluded
-    # 2. At or after the latest adjustment
-    # 3. Held out: the newest calibration point is ALWAYS excluded from the fit
     fit_mask = np.ones(n_total, dtype=bool)
     for i in range(n_total):
         if excluded[i]:
             fit_mask[i] = False
         if latest_adj_idx != -1 and i < latest_adj_idx:
-            fit_mask[i] = False  # Prior epoch point before adjustment
+            fit_mask[i] = False
 
-    fit_mask[-1] = False  # Hold out newest calibration point
+    fit_mask[-1] = False  # Hold out newest point
+
+    # Strictly positive accumulated days (x >= 0, zero negative days)
+    d0 = dates[0]
+    accumulated_days = [(d - d0).days for d in dates]
+    x_all = np.array(accumulated_days, dtype=float)
+    y_all = np.array(measured_values, dtype=float)
 
     n = int(fit_mask.sum())
     if n < 3:
-        # Not enough points in active epoch for regression (< 3 historical points)
-        d0 = dates[0]
-        accumulated_days = [(d - d0).days for d in dates]
-        y_all = np.array(measured_values, dtype=float)
         error_ppm = ((y_all - nominal) / nominal * 1e6) if nominal != 0.0 else y_all
         drift_ppm = np.diff(error_ppm, prepend=np.nan)
 
         rows = []
         for i in range(n_total):
             rows.append({
-                "date": dates[i],
-                "accumulated_days": accumulated_days[i],
+                "date": _iso(dates[i]),
+                "accumulated_days": int(accumulated_days[i]),
                 "measured_value": float(y_all[i]),
                 "error_ppm": float(error_ppm[i]),
-                "drift_ppm": None if i == 0 else float(drift_ppm[i]),
+                "drift_ppm": None if i == 0 or np.isnan(drift_ppm[i]) else float(drift_ppm[i]),
                 "predicted": None, "lower": None, "upper": None,
                 "in_fit": False, "out_of_trend": False,
                 "manually_excluded": bool(excluded[i]),
@@ -71,12 +70,6 @@ def compute_trend(dates: list, measured_values: list, nominal: float = 0.0,
                 "in_active_epoch": (latest_adj_idx == -1 or i >= latest_adj_idx),
             })
         return rows, None
-
-        # Always anchor to the very first calibration in history (x >= 0, ZERO negative days)
-        d0 = dates[0]
-        accumulated_days = [(d - d0).days for d in dates]
-    x_all = np.array(accumulated_days, dtype=float)
-    y_all = np.array(measured_values, dtype=float)
 
     x_fit = x_all[fit_mask]
     y_fit = y_all[fit_mask]
@@ -111,11 +104,11 @@ def compute_trend(dates: list, measured_values: list, nominal: float = 0.0,
             out_of_trend = not (lower_all[i] <= y_all[i] <= upper_all[i])
 
         rows.append({
-            "date": dates[i],
-            "accumulated_days": accumulated_days[i],
+            "date": _iso(dates[i]),
+            "accumulated_days": int(accumulated_days[i]),
             "measured_value": float(y_all[i]),
             "error_ppm": float(error_ppm[i]),
-            "drift_ppm": None if i == 0 else float(drift_ppm[i]),
+            "drift_ppm": None if i == 0 or np.isnan(drift_ppm[i]) else float(drift_ppm[i]),
             "predicted": float(fitted_all[i]) if in_active_epoch else None,
             "lower": float(lower_all[i]) if in_active_epoch else None,
             "upper": float(upper_all[i]) if in_active_epoch else None,
@@ -127,9 +120,9 @@ def compute_trend(dates: list, measured_values: list, nominal: float = 0.0,
         })
 
     stats = {
-        "n": n, "df": df, "slope": float(slope), "intercept": float(intercept),
-        "xbar": float(xbar), "Syx": Syx, "SSx": float(SSx), "t_crit": t_crit,
-        "epoch_start_date": d0, "nominal": nominal, "latest_adj_idx": latest_adj_idx
+        "n": int(n), "df": int(df), "slope": float(slope), "intercept": float(intercept),
+        "xbar": float(xbar), "Syx": float(Syx), "SSx": float(SSx), "t_crit": float(t_crit),
+        "epoch_start_date": _iso(d0), "nominal": float(nominal), "latest_adj_idx": int(latest_adj_idx)
     }
     return rows, stats
 
@@ -153,7 +146,7 @@ def compute_trend_for_asset(conn, asset_id: int) -> tuple:
         "WHERE asset_id = ? ORDER BY cal_date",
         (asset_id,),
     ).fetchall()
-    dates = [date.fromisoformat(r[0]) for r in rows]
+    dates = [date.fromisoformat(r[0][:10]) for r in rows]
     measured = [r[1] for r in rows]
     excluded = [bool(r[2]) for r in rows]
     adjustments = [bool(r[3]) for r in rows]

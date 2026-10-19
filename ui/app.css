@@ -6,6 +6,7 @@
   --track: #eef2f6;
   
   --ink: #0b1329;
+  --ink-dark: #1e293b;
   --ink-muted: #475569;
   --ink-faint: #64748b;
   
@@ -31,6 +32,9 @@
   --radius-sm: 6px;
   --radius-md: 10px;
   --shadow-card: 0 0 0 1px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04), 0 6px 16px -2px rgba(15, 23, 42, 0.03);
+  --shadow-elevated: 0 0 0 1px rgba(15, 23, 42, 0.08), 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 16px 32px -4px rgba(15, 23, 42, 0.06);
+  --shadow-glow: 0 0 0 2px var(--primary-accent), 0 8px 20px -4px rgba(37, 99, 235, 0.18);
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * { box-sizing: border-box; }
@@ -44,7 +48,7 @@ body {
 }
 
 .mono, .num-cell {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'IBM Plex Mono', 'Consolas', monospace;
   font-variant-numeric: tabular-nums;
 }
 
@@ -62,14 +66,14 @@ body {
   justify-content: space-between;
 }
 .header-left { display: flex; align-items: center; gap: 10px; }
-.brand-mark { width: 13px; height: 13px; background: var(--primary); border-radius: 3px; transform: rotate(45deg); cursor: pointer; }
+.brand-mark { width: 13px; height: 13px; background: var(--primary); border-radius: 3px; transform: rotate(45deg); cursor: pointer; transition: all 0.2s ease; }
+.brand-mark:hover { background: var(--primary-accent); transform: rotate(90deg) scale(1.1); }
 .brand-title { font-size: 15px; font-weight: 700; margin: 0; color: var(--primary); cursor: pointer; }
 .crumb-sep { color: var(--ink-faint); font-weight: 300; }
 .crumb-sub { font-size: 12.5px; font-weight: 600; color: var(--ink-muted); }
 
 .header-right { display: flex; align-items: center; gap: 8px; }
 
-/* Network Sync Badge */
 .sync-badge {
   display: flex;
   align-items: center;
@@ -122,12 +126,17 @@ body {
 .badge-ok { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok-border); }
 .badge-ok .badge-dot { background: var(--ok); }
 .badge-warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-border); }
-.badge-warn .badge-dot { background: var(--warn); }
+.badge-warn .badge-dot { background: var(--warn); animation: pulse-dot 2s infinite ease-in-out; }
 .badge-reviewed { background: var(--reviewed-bg); color: var(--reviewed); border: 1px solid var(--reviewed-border); }
 .badge-reviewed .badge-dot { background: var(--reviewed); }
 .badge-neutral { background: var(--panel-subtle); color: var(--ink-muted); border: 1px solid var(--line); }
 
-/* Panels & Cards */
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.35); opacity: 0.7; }
+}
+
+/* Panels */
 .panel {
   background: #ffffff;
   border-radius: var(--radius-md);
@@ -173,3 +182,66 @@ tbody td {
 }
 tbody tr:hover td { background: var(--panel-hover); cursor: pointer; }
 td.right, th.right { text-align: right; }
+
+/* High-Contrast Acceptance Limit Chip */
+.limit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--ink-dark);
+  font-weight: 600;
+}
+.limit-sep { color: var(--ink-faint); font-weight: 400; font-size: 10px; }
+
+/* Modals */
+.note-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.note-modal-overlay.open { display: flex; }
+.note-modal-card {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  width: 480px;
+  max-width: 90vw;
+  box-shadow: 0 14px 28px -6px rgba(15, 23, 42, 0.15);
+  padding: 24px;
+  animation: modal-pop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes modal-pop {
+  0% { transform: scale(0.96); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Floating Action Drawer */
+.floating-drawer {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(140%);
+  background: var(--primary);
+  color: white;
+  padding: 10px 22px;
+  border-radius: 9999px;
+  box-shadow: 0 12px 24px -4px rgba(15, 23, 42, 0.12);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  z-index: 50;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.floating-drawer.visible { transform: translateX(-50%) translateY(0); }
