@@ -1,11 +1,53 @@
 /**
  * app.js - Complete Studio Application Controller for pywebview
- * Built-in zero-dependency Metrology Canvas Charting Engine with Interactive Hover
+ * Built-in zero-dependency Metrology Canvas Charting Engine
+ * Full 11-decade resistor precision & complete multi-point test series
  */
 
 let activeAssetDetail = null;
 let currentChartMode = 'primary';
 let hoveredPoint = null;
+
+// Dynamic Significant Figures helper matching Python _decimals_for()
+function getDecimalsForNominal(nominal) {
+  const n = Math.abs(Number(nominal) || 1);
+  if (n < 1) return 8; // 0.1 Ohm -> 8 decimals
+  const intDigits = String(Math.floor(n)).length;
+  return Math.max(0, 9 - intDigits);
+}
+
+function formatMeasuredValue(val, asset, customNominal = null) {
+  if (val === null || val === undefined || isNaN(val)) return '—';
+  const num = Number(val);
+  const cat = asset.category || 'standard_resistor';
+
+  if (cat === 'dcv_reference') {
+    return num.toFixed(8) + ' V';
+  }
+  if (cat === 'ac_divider') {
+    return num.toFixed(5);
+  }
+  if (cat === 'waveform_generator') {
+    return (num > 0 ? '+' : '') + num.toFixed(5) + ' dB';
+  }
+
+  // Standard Resistors: Dynamic decade decimals (8 decimals for 0.1Ω, 5 for 1kΩ, 0 for 1GΩ)
+  const nom = customNominal || asset.nominal_ohms || 1.0;
+  const dec = getDecimalsForNominal(nom);
+  return num.toFixed(dec) + ' Ω';
+}
+
+function formatLimits(val, asset, customNominal = null) {
+  if (val === null || val === undefined || isNaN(val)) return '—';
+  const num = Number(val);
+  const cat = asset.category || 'standard_resistor';
+  if (cat === 'dcv_reference') return num.toFixed(8);
+  if (cat === 'ac_divider') return num.toFixed(5);
+  if (cat === 'waveform_generator') return (num > 0 ? '+' : '') + num.toFixed(5);
+  const nom = customNominal || asset.nominal_ohms || 1.0;
+  const dec = getDecimalsForNominal(nom);
+  return num.toFixed(dec);
+}
 
 const router = {
   current: 'dashboard',
@@ -260,13 +302,7 @@ function formatCat(c) {
 }
 
 function formatVal(a) {
-  if (a.last_measured === null || a.last_measured === undefined) return '—';
-  const val = Number(a.last_measured);
-  if (isNaN(val)) return String(a.last_measured);
-  if (a.category === 'dcv_reference') return val.toFixed(8) + ' V';
-  if (a.category === 'ac_divider') return val.toFixed(5);
-  if (a.category === 'waveform_generator') return (val > 0 ? '+' : '') + val.toFixed(4) + ' dB';
-  return val.toFixed(7) + ' Ω';
+  return formatMeasuredValue(a.last_measured, a);
 }
 
 // -----------------------------------------------------------------------------
@@ -327,7 +363,7 @@ async function loadAssetDetail(id, tpId) {
                       onclick="router.navigate('asset', { id: ${d.asset.id}, tp: ${tp.id} })">
                     <td style="color:var(--primary-accent);">${tp.point_name}</td>
                     <td style="color:var(--ink-muted);">${tp.group_name}</td>
-                    <td class="num-cell right">${tp.latest_value !== null ? Number(tp.latest_value).toFixed(5) + ' ' + tp.unit : '—'}</td>
+                    <td class="num-cell right">${tp.latest_value !== null ? formatMeasuredValue(tp.latest_value, d.asset, tp.nominal_value) : '—'}</td>
                     <td class="num-cell right">${tp.drift !== null ? (tp.drift > 0 ? '+' : '') + Number(tp.drift).toFixed(4) : '—'}</td>
                     <td class="num-cell">${tp.latest_date || '—'}</td>
                     <td><span class="badge ${tp.status === 'ok' ? 'badge-ok' : (tp.status === 'reviewed_out_of_trend' ? 'badge-reviewed' : 'badge-warn')}">${tp.status === 'ok' ? 'In Trend' : (tp.status === 'reviewed_out_of_trend' ? 'Reviewed' : 'Out of Trend')}</span></td>
@@ -406,7 +442,6 @@ async function loadAssetDetail(id, tpId) {
         </div>
         <div style="position:relative; width:100%; height:320px;">
           <canvas id="desktopTrendCanvas" style="width:100%; height:100%; cursor:crosshair;"></canvas>
-          <!-- Floating Dark Telemetry Tooltip -->
           <div id="canvasHoverTooltip" style="display:none; position:absolute; pointer-events:none; z-index:20; background:#0a192f; color:#fff; padding:10px 14px; border-radius:8px; border:1px solid #334155; box-shadow:0 10px 25px rgba(0,0,0,0.3); font-size:11.5px; min-width:190px;"></div>
         </div>
       </div>
@@ -433,13 +468,13 @@ async function loadAssetDetail(id, tpId) {
             ${(d.calibrations || []).slice().reverse().map(c => `
               <tr style="${c.display_status === 'out_of_trend' ? 'background:rgba(254,243,199,0.4);' : (c.display_status === 'reviewed_out_of_trend' ? 'background:rgba(239,246,255,0.45);' : '')}">
                 <td class="mono font-bold">${c.date} ${c.is_adjusted ? '<span class="badge badge-warn" style="font-size:9px;">Adj</span>' : ''}</td>
-                <td class="num-cell right font-bold">${Number(c.measured_value).toFixed(d.asset.unit === 'V' ? 8 : (d.asset.unit === 'dB' ? 5 : 5))} ${d.asset.unit}</td>
-                <td class="num-cell right">${d.asset.category === 'dcv_reference' ? (c.mu_relative * 10 * 1e9).toFixed(1) + ' nV' : (d.asset.category === 'ac_divider' ? Number(c.mu_relative).toFixed(1) + ' ppm' : '—')}</td>
+                <td class="num-cell right font-bold">${formatMeasuredValue(c.measured_value, d.asset, d.active_test_point?.nominal_value)}</td>
+                <td class="num-cell right">${d.asset.category === 'dcv_reference' ? (c.mu_relative * 10 * 1e9).toFixed(1) + ' nV' : (d.asset.category === 'ac_divider' ? Number(c.mu_relative).toFixed(1) + ' ppm' : (d.asset.category === 'waveform_generator' ? '—' : Number(c.mu_relative * (d.active_test_point?.nominal_value || d.asset.nominal_ohms || 1)).toExponential(2) + ' Ω'))}</td>
                 <td class="num-cell right">${c.error_ppm !== undefined ? (c.error_ppm > 0 ? '+' : '') + Number(c.error_ppm).toFixed(2) + ' ppm' : '—'}</td>
                 <td class="num-cell right">${c.drift_ppm !== undefined && c.drift_ppm !== null ? (c.drift_ppm > 0 ? '+' : '') + Number(c.drift_ppm).toFixed(2) + ' ppm' : '—'}</td>
                 <td class="num-cell right">
                   ${c.lower !== null && c.upper !== null && c.lower !== undefined && c.upper !== undefined ? `
-                    <span class="limit-chip">${Number(c.lower).toFixed(d.asset.unit === 'V' ? 8 : 5)} <span class="limit-sep">↔</span> ${Number(c.upper).toFixed(d.asset.unit === 'V' ? 8 : 5)}</span>
+                    <span class="limit-chip">${formatLimits(c.lower, d.asset, d.active_test_point?.nominal_value)} <span class="limit-sep">↔</span> ${formatLimits(c.upper, d.asset, d.active_test_point?.nominal_value)}</span>
                   ` : '—'}
                 </td>
                 ${d.asset.category === 'dcv_reference' ? `<td>${c.location || '—'}</td><td class="num-cell right">${c.pressure_hpa ? Math.round(c.pressure_hpa) + ' hPa' : '—'}</td>` : ''}
@@ -465,17 +500,13 @@ async function loadAssetDetail(id, tpId) {
     </div>
   `;
 
-// Wait for DOM reflow so canvas has full width and height
   requestAnimationFrame(() => {
     setTimeout(() => {
       setupInteractiveCanvas(d, currentChartMode);
-    }, 50);
+    }, 40);
   });
 }
 
-// -----------------------------------------------------------------------------
-// STANDALONE 100% OFFLINE INTERACTIVE CANVAS CHART WITH HOVER & CROSSHAIR
-// -----------------------------------------------------------------------------
 function setupInteractiveCanvas(d, mode) {
   const canvas = document.getElementById('desktopTrendCanvas');
   const tooltip = document.getElementById('canvasHoverTooltip');
@@ -524,7 +555,7 @@ function setupInteractiveCanvas(d, mode) {
 
     ctx.clearRect(0, 0, w, h);
 
-    // Draw Gridlines
+    // Gridlines
     ctx.strokeStyle = '#f1f5f9';
     ctx.lineWidth = 1;
     const gridRows = 5;
@@ -540,7 +571,7 @@ function setupInteractiveCanvas(d, mode) {
       ctx.lineTo(w - padding.right, sy);
       ctx.stroke();
 
-      const label = isPrimary ? yVal.toFixed(d.asset.unit === 'V' ? 7 : (d.asset.unit === 'dB' ? 4 : 5)) : yVal.toFixed(2);
+      const label = isPrimary ? formatLimits(yVal, d.asset, d.active_test_point?.nominal_value) : yVal.toFixed(2);
       ctx.fillText(label, padding.left - 8, sy + 3);
     }
 
@@ -667,7 +698,6 @@ function setupInteractiveCanvas(d, mode) {
 
   const chartMeta = renderChart();
 
-  // ATTACH INTERACTIVE MOUSEMOVE & HOVER ENGINE
   canvas.onmousemove = function (e) {
     if (!chartMeta) return;
     const rect = canvas.getBoundingClientRect();
@@ -694,7 +724,6 @@ function setupInteractiveCanvas(d, mode) {
 
     if (hoveredPoint && tooltip) {
       const c = hoveredPoint.raw;
-      const unit = d.asset.unit || '';
       tooltip.style.display = 'block';
       tooltip.style.left = `${Math.min(mx + 15, chartMeta.w - 220)}px`;
       tooltip.style.top = `${Math.max(my - 70, 10)}px`;
@@ -704,17 +733,17 @@ function setupInteractiveCanvas(d, mode) {
         </div>
         <div style="display:flex; justify-content:space-between; gap:12px;">
           <span style="color:#94a3b8;">Measured:</span>
-          <strong class="mono" style="color:#fff;">${Number(c.measured_value).toFixed(unit === 'V' ? 8 : 5)} ${unit}</strong>
+          <strong class="mono" style="color:#fff;">${formatMeasuredValue(c.measured_value, d.asset, d.active_test_point?.nominal_value)}</strong>
         </div>
         ${c.predicted ? `
           <div style="display:flex; justify-content:space-between; gap:12px; color:#cbd5e1;">
             <span style="color:#94a3b8;">Predicted:</span>
-            <span class="mono">${Number(c.predicted).toFixed(unit === 'V' ? 8 : 5)}</span>
+            <span class="mono">${formatLimits(c.predicted, d.asset, d.active_test_point?.nominal_value)}</span>
           </div>
         ` : ''}
         ${c.lower && c.upper ? `
           <div style="color:#93c5fd; font-size:10.5px; margin-top:3px; font-family:monospace;">
-            Limits: [${Number(c.lower).toFixed(unit === 'V' ? 7 : 5)} ↔ ${Number(c.upper).toFixed(unit === 'V' ? 7 : 5)}]
+            Limits: [${formatLimits(c.lower, d.asset, d.active_test_point?.nominal_value)} ↔ ${formatLimits(c.upper, d.asset, d.active_test_point?.nominal_value)}]
           </div>
         ` : ''}
         ${c.pressure_hpa ? `
@@ -900,7 +929,7 @@ async function loadHTBasic() {
         }).join('')}
       </div>
 
-      <!-- STEP 3: 33622A Waveform Generator Selector (Title is Equipment ID) -->
+      <!-- STEP 3: 33622A Generator Selector (Title is Equipment ID) -->
       <label style="font-weight:700; font-size:12.5px; color:var(--primary); margin-bottom:6px; display:block;">Step 3: Select 33622A Waveform Generator Standard</label>
       <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin-bottom:16px;">
         ${Object.entries(d.wfg_options).map(([sn, item]) => {
@@ -990,7 +1019,7 @@ async function loadHTBasic() {
                   <td class="num-cell right">${r.nominal}</td>
                   <td class="mono" style="color:var(--primary-accent); font-weight:600;">${r.pn}</td>
                   <td class="mono">${r.serial}</td>
-                  <td class="num-cell right" style="font-weight:700;">${r.measured_value ? Number(r.measured_value).toFixed(8) + ' Ω' : '<span style="color:var(--warn)">Missing</span>'}</td>
+                  <td class="num-cell right" style="font-weight:700;">${r.measured_value ? Number(r.measured_value).toFixed(getDecimalsForNominal(r.nominal.replace(/[^0-9.]/g,''))) + ' Ω' : '<span style="color:var(--warn)">Missing</span>'}</td>
                   <td class="num-cell">${r.cal_date}</td>
                 </tr>
               `).join('')}

@@ -1,6 +1,7 @@
 """
 report_pdf.py - generates PDF audit reports across all calibration standards:
 Standard Resistors, DC Voltage References, AC Dividers, and Waveform Generators.
+Aligned to exact 5-decimal precision for Waveform Generators.
 """
 
 import io
@@ -19,8 +20,8 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Tabl
 
 from queries import get_asset_detail
 
-STEEL = colors.HexColor("#0f2744")
-WARN = colors.HexColor("#b45309")
+STEEL = colors.HexColor("#0a192f")
+WARN = colors.HexColor("#d97706")
 REVIEWED = colors.HexColor("#1d4ed8")
 GREY = colors.HexColor("#64748b")
 INK_DIM = colors.HexColor("#475569")
@@ -34,7 +35,7 @@ def _status_of(cal: dict) -> tuple:
     if cal.get("out_of_trend"):
         return "Out of Trend", WARN
     if cal.get("predicted") is not None:
-        return "In Trend", colors.HexColor("#15803d")
+        return "In Trend", colors.HexColor("#059669")
     return "Baseline", GREY
 
 
@@ -67,9 +68,9 @@ def _render_chart_png(calibrations: list, asset: dict) -> bytes:
         elif c.get("display_status") == "reviewed_out_of_trend":
             point_colors.append("#1d4ed8")
         elif c.get("out_of_trend"):
-            point_colors.append("#b45309")
+            point_colors.append("#d97706")
         else:
-            point_colors.append("#0f2744")
+            point_colors.append("#0a192f")
 
     ax.scatter(xs, measured, c=point_colors, s=20, zorder=3, label="Measured")
 
@@ -99,7 +100,7 @@ def _format_val(val, asset: dict):
     if cat == "ac_divider":
         return f"{val:.5f}"
     if cat == "waveform_generator":
-        return f"{val:+.4f} dB"
+        return f"{val:+.5f} dB"  # Exact 5 decimals with sign
     nom = asset.get("nominal_ohms", 1.0)
     integer_digits = len(str(abs(int(nom)))) if abs(nom) >= 1 else 1
     decimals = max(0, 9 - integer_digits)
@@ -114,7 +115,7 @@ def _asset_flowables(detail: dict, styles) -> list:
 
     title = asset["model"] or asset["serial"]
     flow.append(Paragraph(f"<b>{escape(str(title))}</b>", styles["AssetTitle"]))
-    
+
     cat_name = {
         "dcv_reference": "DC Voltage Reference",
         "ac_divider": "AC Voltage Divider",
@@ -137,7 +138,7 @@ def _asset_flowables(detail: dict, styles) -> list:
         flow.append(Spacer(1, 14))
         return flow
 
-    # Multi-Point Summary Matrix Table directly on PDF
+    # Multi-point glance table on PDF (AC Dividers & 33622A)
     if test_points and len(test_points) > 1:
         matrix_data = [["Test Point", "Classification", "Latest Reading", "Drift", "Status"]]
         for tp in test_points[:8]:
