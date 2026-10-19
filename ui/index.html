@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calibration Trending System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+<body>
+
+<!-- Desktop Header -->
+<header class="app-header">
+  <div class="header-left">
+    <span class="brand-mark"></span>
+    <h1 class="brand-title" onclick="router.navigate('dashboard')">Calibration Trending</h1>
+    <span class="crumb-sep">/</span>
+    <span class="crumb-sub" id="currentViewTitle">Fleet Overview</span>
+  </div>
+
+  <div class="header-right">
+    <!-- Network Sync Status Widget -->
+    <div class="sync-badge" id="syncStatusBadge" onclick="app.syncNow()" title="Click to sync database now">
+      <span class="sync-dot"></span>
+      <span id="syncStatusText">Network: Idle</span>
+    </div>
+
+    <button class="btn" onclick="app.generateBatchReport()">Export Report</button>
+    <button class="btn btn-primary" onclick="router.navigate('htbasic')">Cal. Factor Files</button>
+  </div>
+</header>
+
+<!-- Main View Container -->
+<main id="appRoot">
+  <!-- Dynamic views (Dashboard, Asset Detail, HTBasic) injected here by app.js -->
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

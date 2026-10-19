@@ -130,7 +130,6 @@ def api_asset_detail(asset_id):
     if detail is None:
         return jsonify({"error": "Asset not found"}), 404
     return jsonify(detail)
-git ini
 
 @app.route("/api/htbasic/context", methods=["GET"])
 def api_htbasic_context():
