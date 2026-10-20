@@ -4,13 +4,14 @@ guaranteed chronological date sorting, and facility epoch detection.
 """
 
 from datetime import date, datetime
+from typing import Optional, List, Dict, Any
 from trending import compute_trend
 from stability_specs import assess_drift, get_spec_description
 
 MIN_POINTS_FOR_TREND = 4
 
 
-def to_date(d):
+def to_date(d) -> Optional[date]:
     """Safely converts string, date, or datetime into datetime.date."""
     if d is None:
         return None
@@ -28,7 +29,7 @@ def to_date(d):
     return date.fromisoformat(s[:10])
 
 
-def list_assets(conn):
+def list_assets(conn) -> List[Dict[str, Any]]:
     assets = conn.execute(
         "SELECT id, serial, model, asset_number, nominal_ohms, source_sheet, set_id, category, unit FROM assets "
         "ORDER BY category, nominal_ohms, serial"
@@ -39,7 +40,10 @@ def list_assets(conn):
         category = category or "standard_resistor"
         unit = unit or "Ω"
 
-        tp_rows = conn.execute("SELECT id, nominal_value FROM test_points WHERE asset_id = ?", (asset_id,)).fetchall()
+        tp_rows = conn.execute(
+            "SELECT id, nominal_value, point_name FROM test_points WHERE asset_id = ?",
+            (asset_id,)
+        ).fetchall()
 
         if tp_rows and len(tp_rows) > 1:
             worst_status = "ok"
@@ -47,16 +51,15 @@ def list_assets(conn):
             last_date = None
             last_val = None
 
-            for tp_id, tp_nom in tp_rows:
+            for tp_id, tp_nom, tp_name in tp_rows:
                 readings = conn.execute(
                     "SELECT c.cal_date, cr.measured_value, cr.excluded_from_regression, c.is_adjusted, "
-                    "c.reviewer_comment, c.reviewer_attachment_path "
+                    "c.reviewer_comment, c.reviewer_attachment_path, c.location "
                     "FROM calibrations c JOIN calibration_readings cr ON cr.calibration_id = c.id "
                     "WHERE c.asset_id = ? AND cr.test_point_id = ?",
                     (asset_id, tp_id)
                 ).fetchall()
 
-                # Ensure strict chronological sorting
                 readings.sort(key=lambda r: to_date(r[0]))
 
                 if readings:
@@ -68,9 +71,20 @@ def list_assets(conn):
                     dates = [to_date(r[0]) for r in readings]
                     measured = [r[1] for r in readings]
                     excluded = [bool(r[2]) for r in readings]
-                    adjustments = [bool(r[3]) for r in readings]
+
+                    epoch_resets = []
+                    prev_loc = None
+                    for r in readings:
+                        is_reset = bool(r[3])
+                        loc = r[6] if len(r) > 6 else None
+                        if category == "dcv_reference" and loc:
+                            if prev_loc and loc != prev_loc:
+                                is_reset = True
+                            prev_loc = loc
+                        epoch_resets.append(is_reset)
+
                     nom_val = tp_nom if tp_nom is not None else (measured[0] if measured else 0.0)
-                    rows, stats = compute_trend(dates, measured, nom_val, excluded=excluded, adjustments=adjustments)
+                    rows, stats = compute_trend(dates, measured, nom_val, excluded=excluded, adjustments=epoch_resets)
                     if rows and rows[-1]["out_of_trend"]:
                         has_rev = bool(readings[-1][4] or readings[-1][5])
                         if not has_rev:
@@ -98,7 +112,6 @@ def list_assets(conn):
                 (asset_id,),
             ).fetchall()
 
-            # Ensure strict chronological sorting
             cals.sort(key=lambda c: to_date(c[0]))
 
             entry = {
@@ -144,7 +157,7 @@ def list_assets(conn):
     return results
 
 
-def list_assets_grouped_by_set(conn):
+def list_assets_grouped_by_set(conn) -> List[Dict[str, Any]]:
     assets = list_assets(conn)
     groups = {}
     for a in assets:
@@ -168,7 +181,7 @@ def list_assets_grouped_by_set(conn):
     return result
 
 
-def get_asset_detail(conn, asset_id: int, selected_point_id: int = None):
+def get_asset_detail(conn, asset_id: int, selected_point_id: int = None) -> Optional[Dict[str, Any]]:
     asset_row = conn.execute(
         "SELECT id, serial, model, asset_number, nominal_ohms, source_workbook, source_sheet, set_id, category, unit "
         "FROM assets WHERE id = ?", (asset_id,)
@@ -194,7 +207,7 @@ def get_asset_detail(conn, asset_id: int, selected_point_id: int = None):
 
         r_rows = conn.execute(
             "SELECT c.cal_date, cr.measured_value, cr.uncertainty, cr.excluded_from_regression, c.is_adjusted, "
-            "c.reviewer_comment, c.reviewer_attachment_path "
+            "c.reviewer_comment, c.reviewer_attachment_path, c.location "
             "FROM calibrations c JOIN calibration_readings cr ON cr.calibration_id = c.id "
             "WHERE c.asset_id = ? AND cr.test_point_id = ?",
             (asset_id, tp_id)
@@ -205,16 +218,45 @@ def get_asset_detail(conn, asset_id: int, selected_point_id: int = None):
         latest_val = r_rows[-1][1] if r_rows else None
         latest_date = str(to_date(r_rows[-1][0])) if r_rows else None
         prev_val = r_rows[-2][1] if len(r_rows) > 1 else None
-        drift = (latest_val - prev_val) if (latest_val is not None and prev_val is not None) else None
+
+        # Normalized drift calculation: strictly null / "—" if only 1 cal point exists
+        drift = None
+        drift_ppm = None
+        drift_display = "—"
+
+        if latest_val is not None and prev_val is not None:
+            drift = latest_val - prev_val
+            if tp_unit == "dB" or asset["unit"] == "dB":
+                drift_display = f"{drift:+.4f} dB"
+                drift_ppm = drift
+            else:
+                nom_ref = tp_nom if (tp_nom and tp_nom != 0) else asset["nominal_ohms"]
+                if nom_ref and nom_ref != 0:
+                    drift_ppm = (drift / nom_ref) * 1e6
+                    drift_display = f"{drift_ppm:+.2f} ppm"
+                else:
+                    drift_display = f"{drift:+.4f}"
+                    drift_ppm = drift
 
         tp_status = "ok" if len(r_rows) >= 2 else "insufficient_data"
         if len(r_rows) >= MIN_POINTS_FOR_TREND:
             tp_dates = [to_date(r[0]) for r in r_rows]
             tp_meas = [r[1] for r in r_rows]
             tp_excl = [bool(r[3]) for r in r_rows]
-            tp_adj  = [bool(r[4]) for r in r_rows]
+
+            epoch_resets = []
+            prev_loc = None
+            for r in r_rows:
+                is_reset = bool(r[4])
+                loc = r[7] if len(r) > 7 else None
+                if asset["category"] == "dcv_reference" and loc:
+                    if prev_loc and loc != prev_loc:
+                        is_reset = True
+                    prev_loc = loc
+                epoch_resets.append(is_reset)
+
             tp_nom_val = tp_nom if tp_nom is not None else (tp_meas[0] if tp_meas else 0.0)
-            tp_rows_res, tp_stats = compute_trend(tp_dates, tp_meas, tp_nom_val, excluded=tp_excl, adjustments=tp_adj)
+            tp_rows_res, tp_stats = compute_trend(tp_dates, tp_meas, tp_nom_val, excluded=tp_excl, adjustments=epoch_resets)
             if tp_rows_res and tp_rows_res[-1]["out_of_trend"]:
                 has_rev = bool(r_rows[-1][5] or r_rows[-1][6])
                 tp_status = "reviewed_out_of_trend" if has_rev else "out_of_trend"
@@ -223,16 +265,17 @@ def get_asset_detail(conn, asset_id: int, selected_point_id: int = None):
             "id": tp_id, "point_name": tp_name, "group_name": tp_group,
             "nominal_value": tp_nom, "unit": tp_unit, "display_order": tp_order,
             "latest_value": latest_val, "latest_date": latest_date,
-            "drift": drift, "status": tp_status
+            "drift": drift, "drift_ppm": drift_ppm, "drift_display": drift_display,
+            "status": tp_status
         })
 
     active_tp_id = selected_point_id or (test_point_list[0]["id"] if test_point_list else None)
 
-    # Load calibrations for active test point
+    # Load calibrations selecting BOTH raw unitless mu_relative and reading-level uncertainty
     cal_rows = []
     if active_tp_id:
         cal_rows = conn.execute(
-            "SELECT c.id, c.cal_date, cr.measured_value, cr.uncertainty, c.source, c.cert_number, "
+            "SELECT c.id, c.cal_date, cr.measured_value, c.mu_relative, cr.uncertainty, c.source, c.cert_number, "
             "c.cert_pdf_path, c.reviewer_comment, cr.excluded_from_regression, c.reviewer_attachment_path, "
             "c.reviewer_url, c.pressure_hpa, c.is_adjusted, c.location "
             "FROM calibrations c "
@@ -241,25 +284,25 @@ def get_asset_detail(conn, asset_id: int, selected_point_id: int = None):
             (asset_id, active_tp_id)
         ).fetchall()
 
-    # Fallback to direct parent calibrations if test point readings not linked
     if not cal_rows:
         cal_rows = conn.execute(
-            "SELECT id, cal_date, measured_value, mu_relative, source, cert_number, cert_pdf_path, "
+            "SELECT id, cal_date, measured_value, mu_relative, NULL, source, cert_number, cert_pdf_path, "
             "reviewer_comment, excluded_from_regression, reviewer_attachment_path, reviewer_url, "
             "pressure_hpa, is_adjusted, location "
             "FROM calibrations WHERE asset_id = ?", (asset_id,)
         ).fetchall()
 
     calibrations = [{
-        "id": r[0], "date": str(to_date(r[1])), "measured_value": r[2], "mu_relative": r[3] or 0.0,
-        "source": r[4], "cert_number": r[5], "cert_pdf_path": r[6],
-        "reviewer_comment": r[7], "excluded_from_regression": bool(r[8]),
-        "reviewer_attachment_path": r[9], "reviewer_url": r[10],
-        "pressure_hpa": r[11], "is_adjusted": bool(r[12]),
-        "location": r[13],
+        "id": r[0], "date": str(to_date(r[1])), "measured_value": r[2],
+        "mu_relative": r[3] if r[3] is not None else 0.0,
+        "uncertainty": r[4],  # Specific reading uncertainty (e.g. 35.0 nV or 23.0 ppm)
+        "source": r[5], "cert_number": r[6], "cert_pdf_path": r[7],
+        "reviewer_comment": r[8], "excluded_from_regression": bool(r[9]),
+        "reviewer_attachment_path": r[10], "reviewer_url": r[11],
+        "pressure_hpa": r[12], "is_adjusted": bool(r[13]),
+        "location": r[14],
     } for r in cal_rows]
 
-    # STRICT CHRONOLOGICAL SORTING
     calibrations.sort(key=lambda c: to_date(c["date"]))
 
     active_tp_rec = next((p for p in test_point_list if p["id"] == active_tp_id), None)
@@ -296,7 +339,6 @@ def get_asset_detail(conn, asset_id: int, selected_point_id: int = None):
         cal["in_active_epoch"] = True
         cal["display_status"] = "baseline"
 
-    # Trending & Regression
     trend = None
     if len(calibrations) >= MIN_POINTS_FOR_TREND:
         dates = [to_date(c["date"]) for c in calibrations]
