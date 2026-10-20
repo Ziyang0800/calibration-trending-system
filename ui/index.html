@@ -7,11 +7,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
 <body class="desktop-app-body">
 
 <div class="app-layout">
-  <!-- 1. LEFT APP DOCK / SIDEBAR -->
+  <!-- 1. LEFT NAVIGATION DOCK -->
   <aside class="app-sidebar">
     <div class="sidebar-brand">
       <span class="brand-glyph"></span>
@@ -21,133 +22,98 @@
       </div>
     </div>
 
-    <!-- Navigation Menu Items -->
     <nav class="sidebar-nav">
+      <div class="nav-section-label">Laboratory Workspaces</div>
+
       <button class="nav-item active" id="navDashboard" onclick="router.navigate('dashboard')">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
         <span>Fleet Telemetry</span>
       </button>
 
+      <button class="nav-item" id="navAlerts" onclick="router.navigate('alerts')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        <span>Alerts &amp; Reviews</span>
+        <span class="nav-badge-pill" id="sidebarAlertCount" style="display:none;">0</span>
+      </button>
+
       <button class="nav-item" id="navHTBasic" onclick="router.navigate('htbasic')">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
         <span>Cal. Factor Files</span>
       </button>
 
+      <div class="nav-section-label" style="margin-top:8px;">Quality &amp; Ingestion</div>
+
       <button class="nav-item" onclick="app.importCert()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
         <span>Import Cert PDF</span>
       </button>
 
-      <button class="nav-item" onclick="app.generateBatchReport()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
-        <span>Generate Audit PDF</span>
+      <button class="nav-item" onclick="app.openReportDialog()">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+        <span>Export Audit PDF</span>
+      </button>
+
+      <div class="nav-section-label" style="margin-top:8px;">Configuration</div>
+
+      <button class="nav-item" id="navSettings" onclick="router.navigate('settings')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        <span>Lab Setup &amp; DB</span>
       </button>
     </nav>
 
-    <!-- Sidebar Footer: Network Sync & System Health -->
+    <!-- Sidebar Footer -->
     <div class="sidebar-footer">
-      <div class="sync-telemetry-card" onclick="app.syncNow()" title="Click to trigger immediate network sync">
+      <div class="sync-telemetry-card" onclick="app.syncNow()" title="Click to trigger immediate network backup to Romulus network drive">
         <div class="sync-row">
-          <span class="sync-pulse"></span>
-          <span class="sync-title">NETWORK SYNC</span>
+          <span class="sync-pulse" id="syncStatusPulse"></span>
+          <span class="sync-title">NETWORK BACKUP</span>
         </div>
-        <div class="sync-time mono" id="syncStatusText">Synced: Midnight</div>
+        <div class="sync-time mono" id="syncStatusText">Synced: Checking...</div>
       </div>
     </div>
   </aside>
 
-  <!-- 2. MAIN APP WORKSPACE -->
+  <!-- 2. MAIN WORKSPACE VIEWPORT -->
   <div class="app-workspace">
-    <!-- Top Command Strip -->
     <header class="app-command-strip">
-      <div class="strip-left">
+      <div class="strip-left" style="display:flex; align-items:center; gap:12px;">
         <span class="strip-section-title" id="currentViewTitle">Fleet Overview</span>
+        <span id="breadcrumbDetail" style="display:none; color:var(--ink-muted); font-size:12px;"></span>
       </div>
-      <div class="strip-right">
-        <div class="strip-telemetry-tag">STANDARDS LAB · LOCAL APPDATA ENGINE</div>
+      <div class="strip-right" style="display:flex; align-items:center; gap:14px;">
+        <button class="btn" style="padding:3px 8px; font-size:11px;" onclick="app.toggleTheme()">
+          <span id="themeToggleLabel">Theme: Dark</span>
+        </button>
+        <div class="strip-telemetry-tag">STANDARDS METROLOGY ENGINE</div>
       </div>
     </header>
 
-    <!-- Viewport Root (Fixed Height, Internal Scroll Only) -->
-    <div class="app-viewport-content" id="appRoot"></div>
-  </div>
-</div>
-
-<!-- Inline Reviewer Note Modal -->
-<div class="note-modal-overlay" id="noteModal" onclick="closeNoteModal(event)">
-  <div class="note-modal-card" onclick="event.stopPropagation()">
-    <div class="modal-header">
-      <h4 class="modal-title" id="noteModalTitle">Reviewer Note</h4>
-      <button type="button" class="modal-close-btn" onclick="closeNoteModal()">&times;</button>
-    </div>
-    <p id="noteModalContent" class="modal-body-text"></p>
-    <div id="noteModalAttachment" style="display:none; padding-top:12px; border-top:1px dashed var(--line);">
-      <a id="noteModalAttachLink" href="#" target="_blank" class="btn btn-primary">Open Attached Quality Report</a>
+    <div class="app-viewport-content" id="appRoot">
+      <!-- Dynamic View Mounted Here by router -->
     </div>
   </div>
 </div>
 
-<!-- Edit Calibration Modal -->
-<div class="note-modal-overlay" id="editCalModal" onclick="closeEditModal(event)">
-  <div class="note-modal-card" style="width: 580px;" onclick="event.stopPropagation()">
-    <div class="modal-header">
-      <h4 class="modal-title" id="editModalTitle">Edit Calibration Record</h4>
-      <button type="button" class="modal-close-btn" onclick="closeEditModal()">&times;</button>
-    </div>
-
-    <form id="editCalForm" onsubmit="saveCalibrationModal(event)">
-      <input type="hidden" id="editCalId" name="id">
-      
-      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
-        <div>
-          <label class="form-label">Cal Date</label>
-          <input type="date" id="editCalDate" name="cal_date" required class="form-input">
-        </div>
-        <div>
-          <label class="form-label">Primary Reading</label>
-          <input type="number" step="any" id="editCalMeas" name="measured_value" required class="form-input font-mono">
-        </div>
-      </div>
-
-      <div id="editTestPointsContainer" style="display:none; margin-bottom:14px; padding:12px; background:var(--panel-subtle); border-radius:6px; border:1px solid var(--line);">
-        <div style="font-size:11.5px; font-weight:700; color:var(--primary); margin-bottom:8px;">Characterized Test Points:</div>
-        <div id="editTestPointsGrid" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;"></div>
-      </div>
-
-      <div id="editDcvContainer" style="display:none; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px; padding:10px; background:var(--panel-subtle); border-radius:6px;">
-        <div>
-          <label class="form-label">Location (Roseville/Loveland)</label>
-          <input type="text" id="editCalLoc" name="location" class="form-input">
-        </div>
-        <div>
-          <label class="form-label">Pressure (hPa)</label>
-          <input type="number" step="any" id="editCalPress" name="pressure_hpa" class="form-input font-mono">
-        </div>
-      </div>
-
-      <div style="margin-bottom:12px;">
-        <label class="form-label">Reviewer Note / Engineering Justification</label>
-        <textarea id="editCalComment" name="reviewer_comment" class="form-textarea" placeholder="Document review notes, acceptance, or investigations..."></textarea>
-      </div>
-
-      <div style="margin-bottom:16px; display:flex; flex-direction:column; gap:6px;">
-        <label style="display:flex; align-items:center; gap:8px; font-size:12px; cursor:pointer;">
-          <input type="checkbox" id="editCalAdj" name="is_adjusted">
-          <span>Instrument was Adjusted during this calibration</span>
-        </label>
-        <label style="display:flex; align-items:center; gap:8px; font-size:12px; cursor:pointer;">
-          <input type="checkbox" id="editCalExcl" name="excluded_from_regression">
-          <span>Exclude from regression trend fit (Verified outlier)</span>
-        </label>
-      </div>
-
-      <div style="display:flex; justify-content:flex-end; gap:8px; padding-top:12px; border-top:1px solid var(--line);">
-        <button type="button" class="btn" onclick="closeEditModal()">Cancel</button>
-        <button type="submit" class="btn btn-primary">Save Changes</button>
-      </div>
-    </form>
+<!-- 3. CALCULATION TRACEABILITY DRAWER -->
+<div class="traceability-drawer" id="traceDrawer">
+  <div class="drawer-header">
+    <h4 class="drawer-title">Calculation Traceability &amp; Math</h4>
+    <button type="button" class="btn" style="padding:2px 7px;" onclick="closeTraceDrawer()">&times;</button>
+  </div>
+  <div class="drawer-body" id="traceDrawerContent">
+    <!-- Populated dynamically by asset_detail view -->
   </div>
 </div>
+
+<!-- 4. MODALS (Notes, Edit, Ingest Review, PDF Scope Selector) -->
+<div class="modal-overlay" id="genericModal" onclick="closeGenericModal(event)">
+  <div class="modal-card" id="genericModalCard" onclick="event.stopPropagation()">
+    <!-- Populated dynamically -->
+  </div>
+</div>
+
+<!-- 5. TOAST NOTIFICATION CONTAINER -->
+<div class="toast-container" id="toastContainer"></div>
 
 <script src="app.js"></script>
 </body>
