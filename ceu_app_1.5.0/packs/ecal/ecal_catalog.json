@@ -1,0 +1,347 @@
+{
+ "_note": "ECal catalog. Edit and keep valid JSON. Copy to %APPDATA%\\CEUTool\\ecal_catalog.json to override without rebuilding.",
+ "version": 1,
+ "vna": [
+  "N5230C"
+ ],
+ "connectors": {
+  "3.5mm": "ET33700",
+  "N-50": "ET33717",
+  "APC-7": "ET33733",
+  "N-75": "ET36409",
+  "Type-F": "ET36442",
+  "7-16": "ET51601"
+ },
+ "kit_names": {
+  "ET33700": "3.5mm Cal Kit",
+  "ET33717": "N-50 Cal Kit",
+  "ET33733": "APC-7 Cal Kit",
+  "ET36409": "N-75 Cal Kit",
+  "ET36442": "Type-F Cal Kit",
+  "ET51601": "7-16 Cal Kit"
+ },
+ "torque": [
+  "HP-100",
+  "H-50I",
+  "CD-100M"
+ ],
+ "max_connector_types": {
+  "2": 2,
+  "4": 3
+ },
+ "models": {
+  "85091C": {
+   "description": "Ecal Module (2 Ports 7mm) 30kHz - 9GHz",
+   "ports": 2,
+   "modules": [
+    "85091-60001"
+   ]
+  },
+  "85092C": {
+   "description": "Ecal Module (2 Ports Type-N50 / Mixed Connector) 300kHz - 9GHz",
+   "ports": 2,
+   "modules": [
+    "85092-60008",
+    "85092-60009",
+    "85092-60010",
+    "85092-60004"
+   ]
+  },
+  "85093C": {
+   "description": "Ecal Module (2 Ports 3.5mm / Mixed Connector) 300kHz - 9GHz",
+   "ports": 2,
+   "modules": [
+    "85093-60008",
+    "85093-60009",
+    "85093-60010",
+    "85092-60004"
+   ]
+  },
+  "85096C": {
+   "description": "Ecal Module (2 Ports Type-N75) 300kHz - 3GHz",
+   "ports": 2,
+   "modules": [
+    "85096-60007",
+    "85096-60008",
+    "85096-60009"
+   ]
+  },
+  "85098C": {
+   "description": "Ecal Module (2 Ports 7-16 / Mixed Connector) 30kHz - 7.5GHz",
+   "ports": 2,
+   "modules": [
+    "85098-60007",
+    "85098-60008",
+    "85098-60009",
+    "85092-60004"
+   ]
+  },
+  "85099C": {
+   "description": "Ecal Module (2 Ports Type-F) 300kHz - 3GHz",
+   "ports": 2,
+   "modules": [
+    "85099-60009",
+    "85099-60010",
+    "85099-60011"
+   ]
+  },
+  "N4431A": {
+   "description": "Ecal Module (4 Ports Type-N50 / 3.5mm) 300kHz - 9 GHz",
+   "ports": 4,
+   "modules": [
+    "N4431-60006",
+    "N4431-60008",
+    "N4431-60007"
+   ]
+  },
+  "N4431B": {
+   "description": "Ecal Module (4 Ports Type-N50 / 3.5mm) 300kHz - 13.5 GHz",
+   "ports": 4,
+   "modules": [
+    "N4431-60006",
+    "N4431-60008",
+    "N4431-60007"
+   ]
+  },
+  "N4432A": {
+   "description": "Ecal Module (4 Ports Type-N50 / Mixed Connector) 300kHz - 18 GHz",
+   "ports": 4,
+   "modules": [
+    "N4432-60003",
+    "N4432-60005"
+   ]
+  },
+  "N4433A": {
+   "description": "Ecal Module (4 Ports 3.5mm / Mixed Connector) 300kHz - 20GHz",
+   "ports": 4,
+   "modules": [
+    "N4433-60003",
+    "N4433-60004"
+   ]
+  }
+ },
+ "modules": {
+  "85091-60001": {
+   "ports": 2,
+   "options": [
+    "N/A"
+   ],
+   "kit": "ET33733",
+   "type": "Fixed"
+  },
+  "85092-60008": {
+   "ports": 2,
+   "options": [
+    "M0F"
+   ],
+   "kit": "ET33717",
+   "type": "Fixed"
+  },
+  "85092-60009": {
+   "ports": 2,
+   "options": [
+    "00M"
+   ],
+   "kit": "ET33717",
+   "type": "Fixed"
+  },
+  "85092-60010": {
+   "ports": 2,
+   "options": [
+    "00F"
+   ],
+   "kit": "ET33717",
+   "type": "Fixed"
+  },
+  "85092-60004": {
+   "ports": 2,
+   "options": [
+    "x01",
+    "x02",
+    "x03",
+    "x04",
+    "x05",
+    "x06"
+   ],
+   "connectors": [
+    "N-50",
+    "3.5mm",
+    "7-16"
+   ],
+   "type": "Mixed"
+  },
+  "85093-60008": {
+   "ports": 2,
+   "options": [
+    "M0F"
+   ],
+   "kit": "ET33700",
+   "type": "Fixed"
+  },
+  "85093-60009": {
+   "ports": 2,
+   "options": [
+    "00M"
+   ],
+   "kit": "ET33700",
+   "type": "Fixed"
+  },
+  "85093-60010": {
+   "ports": 2,
+   "options": [
+    "00F"
+   ],
+   "kit": "ET33700",
+   "type": "Fixed"
+  },
+  "85096-60007": {
+   "ports": 2,
+   "options": [
+    "M0F"
+   ],
+   "kit": "ET36409",
+   "type": "Fixed"
+  },
+  "85096-60008": {
+   "ports": 2,
+   "options": [
+    "00M"
+   ],
+   "kit": "ET36409",
+   "type": "Fixed"
+  },
+  "85096-60009": {
+   "ports": 2,
+   "options": [
+    "00F"
+   ],
+   "kit": "ET36409",
+   "type": "Fixed"
+  },
+  "85098-60007": {
+   "ports": 2,
+   "options": [
+    "M0F"
+   ],
+   "kit": "ET51601",
+   "type": "Fixed"
+  },
+  "85098-60008": {
+   "ports": 2,
+   "options": [
+    "00M"
+   ],
+   "kit": "ET51601",
+   "type": "Fixed"
+  },
+  "85098-60009": {
+   "ports": 2,
+   "options": [
+    "00F"
+   ],
+   "kit": "ET51601",
+   "type": "Fixed"
+  },
+  "85099-60009": {
+   "ports": 2,
+   "options": [
+    "M0F"
+   ],
+   "kit": "ET36442",
+   "type": "Fixed"
+  },
+  "85099-60010": {
+   "ports": 2,
+   "options": [
+    "00M"
+   ],
+   "kit": "ET36442",
+   "type": "Fixed"
+  },
+  "85099-60011": {
+   "ports": 2,
+   "options": [
+    "00F"
+   ],
+   "kit": "ET36442",
+   "type": "Fixed"
+  },
+  "N4431-60006": {
+   "ports": 4,
+   "options": [
+    "010"
+   ],
+   "kit": "ET33700",
+   "type": "Fixed"
+  },
+  "N4431-60008": {
+   "ports": 4,
+   "options": [
+    "x01",
+    "x02",
+    "x03",
+    "x04",
+    "x05",
+    "x06"
+   ],
+   "connectors": [
+    "N-50",
+    "3.5mm",
+    "7-16"
+   ],
+   "type": "Mixed"
+  },
+  "N4431-60007": {
+   "ports": 4,
+   "options": [
+    "020"
+   ],
+   "kit": "ET33717",
+   "type": "Fixed"
+  },
+  "N4432-60003": {
+   "ports": 4,
+   "options": [
+    "020"
+   ],
+   "kit": "ET33717",
+   "type": "Fixed"
+  },
+  "N4432-60005": {
+   "ports": 4,
+   "options": [
+    "x01",
+    "x02",
+    "x03",
+    "x04",
+    "x05",
+    "x06"
+   ],
+   "connectors": [
+    "N-50",
+    "3.5mm",
+    "7-16"
+   ],
+   "type": "Mixed"
+  },
+  "N4433-60003": {
+   "ports": 4,
+   "options": [
+    "010"
+   ],
+   "kit": "ET33700",
+   "type": "Fixed"
+  },
+  "N4433-60004": {
+   "ports": 4,
+   "options": [
+    "x01",
+    "x02"
+   ],
+   "connectors": [
+    "3.5mm"
+   ],
+   "type": "Mixed"
+  }
+ }
+}

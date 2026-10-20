@@ -1,0 +1,14 @@
+{
+  "id": "ecal",
+  "name": "ECal",
+  "version": "1.0.0",
+  "contract": 1,
+  "needs_shell": "1.5.0",
+  "owner": "",
+  "entry": "pack.py",
+  "tag": "Calibration Equipment Used",
+  "desc": "Electronic calibration modules (85091C-85099C, N4431-N4433) with the VNA, cal kits and torque testers.",
+  "keywords": ["ECAL", "e-cal", "electronic calibration", "module", "torque", "cal kit", "85092", "N443"],
+  "detail": "Electronic calibration modules and torque testers",
+  "ui": {"html": "ui/job.html", "js": "ui/ecal.js", "css": "ui/ecal.css"}
+}

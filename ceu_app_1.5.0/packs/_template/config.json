@@ -1,0 +1,6 @@
+{
+  "required": [
+    {"slot": "Digital multimeter", "equipment_id": "PN010068"},
+    {"slot": "Standard resistor", "equipment_id": "PN010001"}
+  ]
+}

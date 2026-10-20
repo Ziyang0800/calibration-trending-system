@@ -346,3 +346,52 @@ td.right, th.right { text-align: right; }
 .form-label { font-size: 11.5px; font-weight: 700; color: var(--ink-muted); display: block; margin-bottom: 3px; }
 .form-input, .form-textarea { width: 100%; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 6px 10px; font-family: inherit; font-size: 12.5px; }
 .form-input:focus, .form-textarea:focus { outline: none; border-color: var(--primary-accent); }
+
+/* Fluid Desktop View Animations */
+@keyframes view-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.view-animate {
+  animation: view-slide-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Tactile Card Depth & Lift */
+.panel {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.panel:hover {
+  box-shadow: 0 0 0 1px rgba(10, 25, 47, 0.08), 0 4px 14px -2px rgba(10, 25, 47, 0.08);
+}
+
+/* Badge Prior Epoch Styling */
+.badge-epoch {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+.badge-epoch .badge-dot {
+  background: #94a3b8;
+}
+
+/* Pulsing Alert Badge */
+@keyframes pulse-amber {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 0.65;
+  }
+}
+.badge-warn .badge-dot {
+  animation: pulse-amber 1.8s infinite ease-in-out;
+}

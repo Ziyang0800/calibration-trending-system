@@ -8,10 +8,9 @@ let activeAssetDetail = null;
 let currentChartMode = 'primary';
 let hoveredPoint = null;
 
-// Dynamic Significant Figures helper matching Python _decimals_for()
 function getDecimalsForNominal(nominal) {
   const n = Math.abs(Number(nominal) || 1);
-  if (n < 1) return 8; // 0.1 Ohm -> 8 decimals
+  if (n < 1) return 8;
   const intDigits = String(Math.floor(n)).length;
   return Math.max(0, 9 - intDigits);
 }
@@ -31,7 +30,6 @@ function formatMeasuredValue(val, asset, customNominal = null) {
     return (num > 0 ? '+' : '') + num.toFixed(5) + ' dB';
   }
 
-  // Standard Resistors: Dynamic decade decimals (8 decimals for 0.1Ω, 5 for 1kΩ, 0 for 1GΩ)
   const nom = customNominal || asset.nominal_ohms || 1.0;
   const dec = getDecimalsForNominal(nom);
   return num.toFixed(dec) + ' Ω';
@@ -123,6 +121,8 @@ function render() {
   const root = document.getElementById('appRoot');
   const title = document.getElementById('currentViewTitle');
   if (!app.data) return;
+
+  root.className = 'app-viewport-content view-animate';
 
   if (router.current === 'dashboard') {
     title.textContent = 'Fleet Overview';
@@ -309,202 +309,217 @@ function formatVal(a) {
 // 2. ASSET DETAIL & INTERACTIVE CANVAS CHART WITH HOVER & CROSSHAIR
 // -----------------------------------------------------------------------------
 async function loadAssetDetail(id, tpId) {
-  const root = document.getElementById('appRoot');
-  const d = await window.pywebview.api.get_asset_detail(id, tpId);
-  activeAssetDetail = d;
-  hoveredPoint = null;
+  try {
+    const root = document.getElementById('appRoot');
+    const d = await window.pywebview.api.get_asset_detail(id, tpId);
+    activeAssetDetail = d;
+    hoveredPoint = null;
 
-  root.innerHTML = `
-    <div style="max-width: 1480px; margin: 0 auto;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-        <button class="btn" onclick="router.navigate('dashboard')">← Return to Dashboard</button>
-        <button class="btn" onclick="exportCurrentExcel(${d.asset.id})">Export Excel</button>
-      </div>
+    if (!d || !d.asset) {
+      alert("Asset data not found.");
+      router.navigate('dashboard');
+      return;
+    }
 
-      <!-- Hero Banner -->
-      <div class="panel" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-        <div>
-          <h2 style="margin:0 0 4px 0; color:var(--primary); font-size:20px;">${d.asset.model || d.asset.serial}</h2>
-          <div style="font-size:12px; color:var(--ink-muted); display:flex; gap:10px;">
-            <span>Equipment ID: <strong>${d.asset.asset_number || '—'}</strong></span>
-            <span>·</span>
-            <span>Serial: <strong class="mono" style="background:#f1f5f9; padding:1px 6px; border-radius:4px;">${d.asset.serial}</strong></span>
-            <span>·</span>
-            <span>Category: <strong>${formatCat(d.asset.category)}</strong></span>
-            <span>·</span>
-            <span>Set: <strong>${d.asset.set_id || '—'}</strong></span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Multi-Point Matrix -->
-      ${d.test_points && d.test_points.length > 1 ? `
-        <div class="panel" style="margin-bottom:16px;">
-          <div class="panel-header">
-            <h3 class="panel-title">Characterized Test Points Matrix (${d.test_points.length} Series)</h3>
-            <span style="font-size:11.5px; color:var(--ink-muted);">Click any row to switch active curve below</span>
-          </div>
-          <div class="table-container" style="box-shadow:none; margin:0;">
-            <table>
-              <thead>
-                <tr>
-                  <th>Test Point</th>
-                  <th>Classification</th>
-                  <th class="right">Latest Value</th>
-                  <th class="right">Drift</th>
-                  <th>Latest Cal Date</th>
-                  <th>Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${d.test_points.map(tp => `
-                  <tr style="cursor:pointer; ${tp.id === d.active_test_point_id ? 'background:#eff6ff; font-weight:600;' : ''}"
-                      onclick="router.navigate('asset', { id: ${d.asset.id}, tp: ${tp.id} })">
-                    <td style="color:var(--primary-accent);">${tp.point_name}</td>
-                    <td style="color:var(--ink-muted);">${tp.group_name}</td>
-                    <td class="num-cell right">${tp.latest_value !== null ? formatMeasuredValue(tp.latest_value, d.asset, tp.nominal_value) : '—'}</td>
-                    <td class="num-cell right">${tp.drift !== null ? (tp.drift > 0 ? '+' : '') + Number(tp.drift).toFixed(4) : '—'}</td>
-                    <td class="num-cell">${tp.latest_date || '—'}</td>
-                    <td><span class="badge ${tp.status === 'ok' ? 'badge-ok' : (tp.status === 'reviewed_out_of_trend' ? 'badge-reviewed' : 'badge-warn')}">${tp.status === 'ok' ? 'In Trend' : (tp.status === 'reviewed_out_of_trend' ? 'Reviewed' : 'Out of Trend')}</span></td>
-                    <td>
-                      <button class="btn ${tp.id === d.active_test_point_id ? 'btn-primary' : ''}" style="padding:1px 8px; font-size:11px;">
-                        ${tp.id === d.active_test_point_id ? 'Active' : 'View'}
-                      </button>
-                    </td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ` : ''}
-
-      <!-- 2-Column Info & Specs -->
-      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:16px;">
-        <div class="panel" style="margin:0;">
-          <div class="panel-header"><h3 class="panel-title">Active Characterization Series</h3></div>
-          <div style="display:grid; grid-template-columns: auto 1fr; gap:6px 16px; font-size:12px;">
-            <span style="color:var(--ink-muted);">Series:</span><strong>${d.active_test_point ? d.active_test_point.point_name : d.asset.nominal_ohms + ' Ω'}</strong>
-            <span style="color:var(--ink-muted);">Records:</span><strong>${d.calibrations.length} calibrations</strong>
-            ${d.trend ? `
-              <span style="color:var(--ink-muted);">Regression Fit:</span><span>n = ${d.trend.n} (excludes newest calibration)</span>
-              <span style="color:var(--ink-muted);">Annual Drift Rate:</span><strong class="mono" style="color:var(--primary-accent);">${(d.trend.slope * 365.25).toExponential(3)} ${d.asset.unit}/yr</strong>
-              <span style="color:var(--ink-muted);">Residual Error (Syx):</span><span class="mono">${d.trend.Syx.toExponential(3)}</span>
-            ` : ''}
-          </div>
+    root.innerHTML = `
+      <div style="max-width: 1480px; margin: 0 auto;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <button class="btn" onclick="router.navigate('dashboard')">← Return to Dashboard</button>
+          <button class="btn" onclick="exportCurrentExcel(${d.asset.id})">Export Excel</button>
         </div>
 
-        <div class="panel" style="margin:0;">
-          <div class="panel-header"><h3 class="panel-title">Stability &amp; Environmental Telemetry</h3></div>
-          ${d.stability ? `
-            <div style="font-size:12px;">
-              <div>Spec: <strong>${d.stability.spec_description}</strong></div>
-              <div style="margin-top:4px;">Observed drift across ${d.stability.elapsed_days} days: <strong>${d.stability.observed_drift_ppm.toFixed(2)} ppm</strong> (Limit: ±${d.stability.allowance_ppm.toFixed(2)} ppm)</div>
-              <div style="margin-top:12px;">
-                <div style="display:flex; justify-content:space-between; font-size:10px; font-family:monospace; font-weight:700; color:var(--ink-faint); margin-bottom:2px;">
-                  <span>-${d.stability.allowance_ppm.toFixed(2)} ppm</span>
-                  <span>0 ppm</span>
-                  <span>+${d.stability.allowance_ppm.toFixed(2)} ppm</span>
-                </div>
-                <div style="height:10px; background:#e2e8f0; border:1px solid #cbd5e1; border-radius:999px; position:relative;">
-                  <div style="position:absolute; left:50%; top:0; bottom:0; width:2px; background:#475569; transform:translateX(-50%);"></div>
-                  <div style="position:absolute; left:0; right:0; top:0; bottom:0; background:rgba(5, 150, 105, 0.15); border-radius:999px;"></div>
-                  <div style="position:absolute; left:${Math.min(98, Math.max(2, 50 + (d.stability.observed_drift_ppm / d.stability.allowance_ppm) * 50))}%; top:50%; width:12px; height:12px; border-radius:50%; transform:translate(-50%, -50%); background:${d.stability.exceeds ? '#d97706' : '#059669'}; border:2px solid #ffffff;"></div>
-                </div>
-              </div>
+        <!-- Hero Banner -->
+        <div class="panel" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <div>
+            <h2 style="margin:0 0 4px 0; color:var(--primary); font-size:20px;">${d.asset.model || d.asset.serial}</h2>
+            <div style="font-size:12px; color:var(--ink-muted); display:flex; gap:10px;">
+              <span>Equipment ID: <strong>${d.asset.asset_number || '—'}</strong></span>
+              <span>·</span>
+              <span>Serial: <strong class="mono" style="background:#f1f5f9; padding:1px 6px; border-radius:4px;">${d.asset.serial}</strong></span>
+              <span>·</span>
+              <span>Category: <strong>${formatCat(d.asset.category)}</strong></span>
+              <span>·</span>
+              <span>Set: <strong>${d.asset.set_id || '—'}</strong></span>
             </div>
-          ` : (d.asset.category === 'dcv_reference' ? `
-            <div style="font-size:12px;">
-              <p style="margin:0 0 6px 0; color:var(--ink-muted);">Fluke 732A/C altitude sensitivity (~ -2.5 to -3 nV/hPa). Active Roseville epoch isolated from Loveland step shifts.</p>
-              ${d.calibrations.length > 0 && d.calibrations[d.calibrations.length - 1].pressure_hpa ? `
-                <div style="padding:6px 10px; background:var(--panel-subtle); border-radius:6px; border:1px solid var(--line); font-family:monospace;">
-                  Ambient: <strong>${d.calibrations[d.calibrations.length - 1].pressure_hpa} hPa</strong> · Facility: <strong>${d.calibrations[d.calibrations.length - 1].location || 'Roseville'}</strong>
-                </div>
+          </div>
+        </div>
+
+        <!-- Multi-Point Matrix -->
+        ${d.test_points && d.test_points.length > 1 ? `
+          <div class="panel" style="margin-bottom:16px;">
+            <div class="panel-header">
+              <h3 class="panel-title">Characterized Test Points Matrix (${d.test_points.length} Series)</h3>
+              <span style="font-size:11.5px; color:var(--ink-muted);">Click any row to switch active curve below</span>
+            </div>
+            <div class="table-container" style="box-shadow:none; margin:0;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Test Point</th>
+                    <th>Classification</th>
+                    <th class="right">Latest Value</th>
+                    <th class="right">Drift</th>
+                    <th>Latest Cal Date</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${d.test_points.map(tp => `
+                    <tr style="cursor:pointer; ${tp.id === d.active_test_point_id ? 'background:#eff6ff; font-weight:600;' : ''}"
+                        onclick="router.navigate('asset', { id: ${d.asset.id}, tp: ${tp.id} })">
+                      <td style="color:var(--primary-accent);">${tp.point_name}</td>
+                      <td style="color:var(--ink-muted);">${tp.group_name}</td>
+                      <td class="num-cell right">${tp.latest_value !== null ? formatMeasuredValue(tp.latest_value, d.asset, tp.nominal_value) : '—'}</td>
+                      <td class="num-cell right">${tp.drift !== null ? (tp.drift > 0 ? '+' : '') + Number(tp.drift).toFixed(4) : '—'}</td>
+                      <td class="num-cell">${tp.latest_date || '—'}</td>
+                      <td>
+                        <span class="badge ${tp.status === 'ok' ? 'badge-ok' : (tp.status === 'reviewed_out_of_trend' ? 'badge-reviewed' : 'badge-warn')}">
+                          ${tp.status === 'ok' ? 'In Trend' : (tp.status === 'reviewed_out_of_trend' ? 'Reviewed' : 'Out of Trend')}
+                        </span>
+                      </td>
+                      <td>
+                        <button class="btn ${tp.id === d.active_test_point_id ? 'btn-primary' : ''}" style="padding:1px 8px; font-size:11px;">
+                          ${tp.id === d.active_test_point_id ? 'Active' : 'View'}
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- 2-Column Info & Specs -->
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:16px;">
+          <div class="panel" style="margin:0;">
+            <div class="panel-header"><h3 class="panel-title">Active Characterization Series</h3></div>
+            <div style="display:grid; grid-template-columns: auto 1fr; gap:6px 16px; font-size:12px;">
+              <span style="color:var(--ink-muted);">Series:</span><strong>${d.active_test_point ? d.active_test_point.point_name : d.asset.nominal_ohms + ' Ω'}</strong>
+              <span style="color:var(--ink-muted);">Records:</span><strong>${d.calibrations.length} calibrations</strong>
+              ${d.trend ? `
+                <span style="color:var(--ink-muted);">Regression Fit:</span><span>n = ${d.trend.n} (excludes newest calibration)</span>
+                <span style="color:var(--ink-muted);">Annual Drift Rate:</span><strong class="mono" style="color:var(--primary-accent);">${(d.trend.slope * 365.25).toExponential(3)} ${d.asset.unit}/yr</strong>
+                <span style="color:var(--ink-muted);">Residual Error (Syx):</span><span class="mono">${d.trend.Syx.toExponential(3)}</span>
               ` : ''}
             </div>
-          ` : `
-            <div style="font-size:12px; color:var(--ink-muted); padding:8px 0;">
-              Continuous multi-year regression active across all historical observations.
-            </div>
-          `)}
-        </div>
-      </div>
+          </div>
 
-      <!-- Trend Canvas with 95% Shading & Interactive Hover Crosshair -->
-      <div class="panel" style="margin-bottom:16px;">
-        <div class="panel-header">
-          <h3 class="panel-title">Regression Trend &amp; 95% Prediction Interval: ${d.active_test_point ? d.active_test_point.point_name : d.asset.model}</h3>
-          <div style="display:flex; gap:4px; background:var(--track); padding:2px; border-radius:6px;">
-            <button class="btn ${currentChartMode === 'primary' ? 'btn-primary' : ''}" style="padding:2px 10px; font-size:11.5px;" onclick="switchChartMode('primary')">Measured (${d.asset.unit})</button>
-            <button class="btn ${currentChartMode === 'relative' ? 'btn-primary' : ''}" style="padding:2px 10px; font-size:11.5px;" onclick="switchChartMode('relative')">${d.asset.unit === 'dB' ? 'Deviation (dB)' : 'Relative Error (ppm)'}</button>
+          <div class="panel" style="margin:0;">
+            <div class="panel-header"><h3 class="panel-title">Stability &amp; Environmental Telemetry</h3></div>
+            ${d.stability ? `
+              <div style="font-size:12px;">
+                <div>Spec: <strong>${d.stability.spec_description}</strong></div>
+                <div style="margin-top:4px;">Observed drift across ${d.stability.elapsed_days} days: <strong>${d.stability.observed_drift_ppm.toFixed(2)} ppm</strong> (Limit: ±${d.stability.allowance_ppm.toFixed(2)} ppm)</div>
+                <div style="margin-top:12px;">
+                  <div style="display:flex; justify-content:space-between; font-size:10px; font-family:monospace; font-weight:700; color:var(--ink-faint); margin-bottom:2px;">
+                    <span>-${d.stability.allowance_ppm.toFixed(2)} ppm</span>
+                    <span>0 ppm</span>
+                    <span>+${d.stability.allowance_ppm.toFixed(2)} ppm</span>
+                  </div>
+                  <div style="height:10px; background:#e2e8f0; border:1px solid #cbd5e1; border-radius:999px; position:relative;">
+                    <div style="position:absolute; left:50%; top:0; bottom:0; width:2px; background:#475569; transform:translateX(-50%);"></div>
+                    <div style="position:absolute; left:0; right:0; top:0; bottom:0; background:rgba(5, 150, 105, 0.15); border-radius:999px;"></div>
+                    <div style="position:absolute; left:${Math.min(98, Math.max(2, 50 + (d.stability.observed_drift_ppm / d.stability.allowance_ppm) * 50))}%; top:50%; width:12px; height:12px; border-radius:50%; transform:translate(-50%, -50%); background:${d.stability.exceeds ? '#d97706' : '#059669'}; border:2px solid #ffffff;"></div>
+                  </div>
+                </div>
+              </div>
+            ` : (d.asset.category === 'dcv_reference' ? `
+              <div style="font-size:12px;">
+                <p style="margin:0 0 6px 0; color:var(--ink-muted);">Fluke 732A/C altitude sensitivity (~ -2.5 to -3 nV/hPa). Active Roseville epoch isolated from Loveland step shifts.</p>
+                ${d.calibrations.length > 0 && d.calibrations[d.calibrations.length - 1].pressure_hpa ? `
+                  <div style="padding:6px 10px; background:var(--panel-subtle); border-radius:6px; border:1px solid var(--line); font-family:monospace;">
+                    Ambient: <strong>${d.calibrations[d.calibrations.length - 1].pressure_hpa} hPa</strong> · Facility: <strong>${d.calibrations[d.calibrations.length - 1].location || 'Roseville'}</strong>
+                  </div>
+                ` : ''}
+              </div>
+            ` : `
+              <div style="font-size:12px; color:var(--ink-muted); padding:8px 0;">
+                Continuous multi-year regression active across all historical observations.
+              </div>
+            `)}
           </div>
         </div>
-        <div style="position:relative; width:100%; height:320px;">
-          <canvas id="desktopTrendCanvas" style="width:100%; height:100%; cursor:crosshair;"></canvas>
-          <div id="canvasHoverTooltip" style="display:none; position:absolute; pointer-events:none; z-index:20; background:#0a192f; color:#fff; padding:10px 14px; border-radius:8px; border:1px solid #334155; box-shadow:0 10px 25px rgba(0,0,0,0.3); font-size:11.5px; min-width:190px;"></div>
+
+        <!-- Trend Canvas with 95% Shading & Interactive Hover Crosshair -->
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header">
+            <h3 class="panel-title">Regression Trend &amp; 95% Prediction Interval: ${d.active_test_point ? d.active_test_point.point_name : d.asset.model}</h3>
+            <div style="display:flex; gap:4px; background:var(--track); padding:2px; border-radius:6px;">
+              <button class="btn ${currentChartMode === 'primary' ? 'btn-primary' : ''}" style="padding:2px 10px; font-size:11.5px;" onclick="switchChartMode('primary')">Measured (${d.asset.unit})</button>
+              <button class="btn ${currentChartMode === 'relative' ? 'btn-primary' : ''}" style="padding:2px 10px; font-size:11.5px;" onclick="switchChartMode('relative')">${d.asset.unit === 'dB' ? 'Deviation (dB)' : 'Relative Error (ppm)'}</button>
+            </div>
+          </div>
+          <div style="position:relative; width:100%; height:320px;">
+            <canvas id="desktopTrendCanvas" style="width:100%; height:100%; cursor:crosshair;"></canvas>
+            <div id="canvasHoverTooltip" style="display:none; position:absolute; pointer-events:none; z-index:20; background:#0a192f; color:#fff; padding:10px 14px; border-radius:8px; border:1px solid #334155; box-shadow:0 10px 25px rgba(0,0,0,0.3); font-size:11.5px; min-width:190px;"></div>
+          </div>
+        </div>
+
+        <!-- Calibration History Table (Zero Overflow) -->
+        <div class="panel-header" style="margin-bottom:8px;"><h3 class="panel-title">Calibration History: ${d.active_test_point ? d.active_test_point.point_name : 'Readings'}</h3></div>
+        <div class="table-container" style="max-height:460px; overflow-y:auto;">
+          <table>
+            <thead style="position:sticky; top:0; z-index:10; background:#f8fafc;">
+              <tr>
+                <th>Cal Date</th>
+                <th class="right">Measured Value</th>
+                <th class="right">Uncertainty</th>
+                <th class="right">Error</th>
+                <th class="right">Drift</th>
+                <th class="right">95% Acceptance Limits</th>
+                ${d.asset.category === 'dcv_reference' ? '<th>Facility</th><th class="right">Pressure</th>' : ''}
+                <th>Status</th>
+                <th style="text-align:center;">Note</th>
+                <th style="text-align:right;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(d.calibrations || []).slice().reverse().map(c => `
+                <tr style="${c.display_status === 'out_of_trend' ? 'background:rgba(254,243,199,0.4);' : (c.display_status === 'reviewed_out_of_trend' ? 'background:rgba(239,246,255,0.45);' : '')}">
+                  <td class="mono font-bold">${c.date} ${c.is_adjusted ? '<span class="badge badge-warn" style="font-size:9px;">Adj</span>' : ''}</td>
+                  <td class="num-cell right font-bold">${formatMeasuredValue(c.measured_value, d.asset, d.active_test_point?.nominal_value)}</td>
+                  <td class="num-cell right">${d.asset.category === 'dcv_reference' ? (c.mu_relative * 10 * 1e9).toFixed(1) + ' nV' : (d.asset.category === 'ac_divider' ? Number(c.mu_relative).toFixed(1) + ' ppm' : (d.asset.category === 'waveform_generator' ? '—' : Number(c.mu_relative * (d.active_test_point?.nominal_value || d.asset.nominal_ohms || 1)).toExponential(2) + ' Ω'))}</td>
+                  <td class="num-cell right">${c.error_ppm !== undefined ? (c.error_ppm > 0 ? '+' : '') + Number(c.error_ppm).toFixed(2) + ' ppm' : '—'}</td>
+                  <td class="num-cell right">${c.drift_ppm !== undefined && c.drift_ppm !== null ? (c.drift_ppm > 0 ? '+' : '') + Number(c.drift_ppm).toFixed(2) + ' ppm' : '—'}</td>
+                  <td class="num-cell right">
+                    ${c.lower !== null && c.upper !== null && c.lower !== undefined && c.upper !== undefined ? `
+                      <span class="limit-chip">${formatLimits(c.lower, d.asset, d.active_test_point?.nominal_value)} <span class="limit-sep">↔</span> ${formatLimits(c.upper, d.asset, d.active_test_point?.nominal_value)}</span>
+                    ` : '—'}
+                  </td>
+                  ${d.asset.category === 'dcv_reference' ? `<td>${c.location || '—'}</td><td class="num-cell right">${c.pressure_hpa ? Math.round(c.pressure_hpa) + ' hPa' : '—'}</td>` : ''}
+                  <td>
+                    <span class="badge ${c.display_status === 'ok' ? 'badge-ok' : (c.display_status === 'reviewed_out_of_trend' ? 'badge-reviewed' : (c.display_status === 'prior_epoch' ? 'badge-neutral' : 'badge-warn'))}">
+                      <span class="badge-dot"></span>
+                      ${c.display_status === 'ok' ? 'In Trend' : (c.display_status === 'reviewed_out_of_trend' ? 'Reviewed' : (c.display_status === 'prior_epoch' ? 'Prior Epoch' : 'Out of Trend'))}
+                    </span>
+                  </td>
+                  <td style="text-align:center;">
+                    ${c.reviewer_comment || c.reviewer_attachment_path ? `
+                      <button class="btn" style="padding:1px 6px; font-size:11px;" onclick="openNoteModal('${c.date}', '${(c.reviewer_comment || '').replace(/'/g, "\\'")}', '${c.reviewer_attachment_path || ''}', ${c.id})">Note</button>
+                    ` : '—'}
+                  </td>
+                  <td style="text-align:right;">
+                    <button class="btn" style="padding:1px 7px; font-size:11px;" onclick="openEditCalibrationModal(${c.id})">Edit</button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
         </div>
       </div>
+    `;
 
-      <!-- Calibration History Table (Zero Overflow) -->
-      <div class="panel-header" style="margin-bottom:8px;"><h3 class="panel-title">Calibration History: ${d.active_test_point ? d.active_test_point.point_name : 'Readings'}</h3></div>
-      <div class="table-container" style="max-height:460px; overflow-y:auto;">
-        <table>
-          <thead style="position:sticky; top:0; z-index:10; background:#f8fafc;">
-            <tr>
-              <th>Cal Date</th>
-              <th class="right">Measured Value</th>
-              <th class="right">Uncertainty</th>
-              <th class="right">Error</th>
-              <th class="right">Drift</th>
-              <th class="right">95% Acceptance Limits</th>
-              ${d.asset.category === 'dcv_reference' ? '<th>Facility</th><th class="right">Pressure</th>' : ''}
-              <th>Status</th>
-              <th style="text-align:center;">Note</th>
-              <th style="text-align:right;">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${(d.calibrations || []).slice().reverse().map(c => `
-              <tr style="${c.display_status === 'out_of_trend' ? 'background:rgba(254,243,199,0.4);' : (c.display_status === 'reviewed_out_of_trend' ? 'background:rgba(239,246,255,0.45);' : '')}">
-                <td class="mono font-bold">${c.date} ${c.is_adjusted ? '<span class="badge badge-warn" style="font-size:9px;">Adj</span>' : ''}</td>
-                <td class="num-cell right font-bold">${formatMeasuredValue(c.measured_value, d.asset, d.active_test_point?.nominal_value)}</td>
-                <td class="num-cell right">${d.asset.category === 'dcv_reference' ? (c.mu_relative * 10 * 1e9).toFixed(1) + ' nV' : (d.asset.category === 'ac_divider' ? Number(c.mu_relative).toFixed(1) + ' ppm' : (d.asset.category === 'waveform_generator' ? '—' : Number(c.mu_relative * (d.active_test_point?.nominal_value || d.asset.nominal_ohms || 1)).toExponential(2) + ' Ω'))}</td>
-                <td class="num-cell right">${c.error_ppm !== undefined ? (c.error_ppm > 0 ? '+' : '') + Number(c.error_ppm).toFixed(2) + ' ppm' : '—'}</td>
-                <td class="num-cell right">${c.drift_ppm !== undefined && c.drift_ppm !== null ? (c.drift_ppm > 0 ? '+' : '') + Number(c.drift_ppm).toFixed(2) + ' ppm' : '—'}</td>
-                <td class="num-cell right">
-                  ${c.lower !== null && c.upper !== null && c.lower !== undefined && c.upper !== undefined ? `
-                    <span class="limit-chip">${formatLimits(c.lower, d.asset, d.active_test_point?.nominal_value)} <span class="limit-sep">↔</span> ${formatLimits(c.upper, d.asset, d.active_test_point?.nominal_value)}</span>
-                  ` : '—'}
-                </td>
-                ${d.asset.category === 'dcv_reference' ? `<td>${c.location || '—'}</td><td class="num-cell right">${c.pressure_hpa ? Math.round(c.pressure_hpa) + ' hPa' : '—'}</td>` : ''}
-                <td>
-                  <span class="badge ${c.display_status === 'ok' ? 'badge-ok' : (c.display_status === 'reviewed_out_of_trend' ? 'badge-reviewed' : 'badge-warn')}">
-                    <span class="badge-dot"></span>
-                    ${c.display_status === 'ok' ? 'In Trend' : (c.display_status === 'reviewed_out_of_trend' ? 'Reviewed' : 'Out of Trend')}
-                  </span>
-                </td>
-                <td style="text-align:center;">
-                  ${c.reviewer_comment || c.reviewer_attachment_path ? `
-                    <button class="btn" style="padding:1px 6px; font-size:11px;" onclick="openNoteModal('${c.date}', '${(c.reviewer_comment || '').replace(/'/g, "\\'")}', '${c.reviewer_attachment_path || ''}', ${c.id})">Note</button>
-                  ` : '—'}
-                </td>
-                <td style="text-align:right;">
-                  <button class="btn" style="padding:1px 7px; font-size:11px;" onclick="openEditCalibrationModal(${c.id})">Edit</button>
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-
-  requestAnimationFrame(() => {
-    setTimeout(() => {
-      setupInteractiveCanvas(d, currentChartMode);
-    }, 40);
-  });
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        setupInteractiveCanvas(d, currentChartMode);
+      }, 40);
+    });
+  } catch (err) {
+    console.error("Failed to load asset detail:", err);
+    alert("Error loading standard telemetry: " + err);
+  }
 }
 
 function setupInteractiveCanvas(d, mode) {
@@ -525,7 +540,13 @@ function setupInteractiveCanvas(d, mode) {
 
     const isPrimary = (mode === 'primary');
     const cals = d.calibrations || [];
-    if (cals.length === 0) return;
+    if (cals.length === 0) {
+      ctx.fillStyle = '#64748b';
+      ctx.font = '12px "IBM Plex Sans", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('No calibrations on file', w / 2, h / 2);
+      return null;
+    }
 
     const points = cals.map(c => ({
       x: c.accumulated_days,
@@ -663,6 +684,7 @@ function setupInteractiveCanvas(d, mode) {
       let color = '#0a192f';
       if (p.status === 'reviewed_out_of_trend') color = '#1d4ed8';
       else if (p.status === 'out_of_trend') color = '#d97706';
+      else if (p.status === 'prior_epoch') color = '#94a3b8';
 
       ctx.fillStyle = color;
       ctx.strokeStyle = '#ffffff';
@@ -724,6 +746,7 @@ function setupInteractiveCanvas(d, mode) {
 
     if (hoveredPoint && tooltip) {
       const c = hoveredPoint.raw;
+      const unit = d.asset.unit || '';
       tooltip.style.display = 'block';
       tooltip.style.left = `${Math.min(mx + 15, chartMeta.w - 220)}px`;
       tooltip.style.top = `${Math.max(my - 70, 10)}px`;
@@ -753,7 +776,9 @@ function setupInteractiveCanvas(d, mode) {
         ` : ''}
         ${c.display_status === 'reviewed_out_of_trend' ? `
           <div style="color:#60a5fa; font-weight:700; font-size:10.5px; margin-top:3px;">✓ Reviewed by Metrologist</div>
-        ` : ''}
+        ` : (c.display_status === 'prior_epoch' ? `
+          <div style="color:#94a3b8; font-size:10.5px; margin-top:3px;">Prior Baseline Epoch</div>
+        ` : '')}
       `;
     } else if (tooltip) {
       tooltip.style.display = 'none';
@@ -918,9 +943,9 @@ async function loadHTBasic() {
           const resD = d.zero_pt_one_details[pn] || {};
           return `
             <div class="panel" style="margin:0; cursor:pointer; border:2px solid ${selected01Ohm === pn ? 'var(--primary-accent)' : 'var(--line)'}; ${selected01Ohm === pn ? 'background:#eff6ff;' : ''}" onclick="set01Ohm('${pn}')">
-              <div style="font-weight:700; font-size:13.5px; color:var(--primary);">${pn}</div>
-              <div style="font-size:11.5px; color:var(--ink-muted); margin-bottom:6px;">Serial: <strong>${resD.serial || '—'}</strong> · ${resD.set_id || '—'}</div>
-              <div style="font-size:11.5px; border-top:1px dashed var(--line); padding-top:4px;">
+              <div style="font-weight:700; font-size:14px; color:var(--primary);">${pn}</div>
+              <div style="font-size:12px; color:var(--ink-muted); margin-bottom:8px;">Serial: <strong>${resD.serial || '—'}</strong> · ${resD.set_id || '—'}</div>
+              <div style="font-size:12px; border-top:1px dashed var(--line); padding-top:4px;">
                 <div style="color:var(--ink-faint);">Live Value: <strong class="mono" style="color:var(--primary);">${resD.last_measured ? Number(resD.last_measured).toFixed(8) + ' Ω' : 'Missing'}</strong></div>
                 <div style="font-size:10.5px; color:var(--ink-faint);">Cal Date: ${resD.last_date || '—'}</div>
               </div>
@@ -936,8 +961,8 @@ async function loadHTBasic() {
           const wD = d.wfg_details[sn] || {};
           return `
             <div class="panel" style="margin:0; cursor:pointer; border:2px solid ${selectedWfg === sn ? 'var(--primary-accent)' : 'var(--line)'}; ${selectedWfg === sn ? 'background:#eff6ff;' : ''}" onclick="setWfg('${sn}')">
-              <div style="font-weight:700; font-size:13.5px; color:var(--primary);">${wD.trace_id || item.pn}</div>
-              <div style="font-size:11.5px; color:var(--ink-muted); margin-bottom:4px;">Serial: <strong>${sn}</strong> · ${wD.set_id || item.default_set}</div>
+              <div style="font-weight:700; font-size:14px; color:var(--primary);">${wD.trace_id || item.pn}</div>
+              <div style="font-size:12px; color:var(--ink-muted); margin-bottom:4px;">Serial: <strong>${sn}</strong> · ${wD.set_id || item.default_set}</div>
               <div style="font-size:11.5px; border-top:1px dashed var(--line); padding-top:4px;">
                 <div>Target: <strong>${item.file_id}_Extended.txt</strong></div>
                 <div style="font-size:10.5px; color:var(--ink-faint); margin-top:2px;">Cal Date: ${wD.last_date || '—'}</div>

@@ -1,0 +1,8 @@
+mars_account.json
+dist/
+build/
+*.spec
+__pycache__/
+version_info.txt
+*.bak
+sub/

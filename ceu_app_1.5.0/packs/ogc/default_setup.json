@@ -1,0 +1,99 @@
+{
+  "_note": "Slot 1 and 2 are the B-1 Calibrator and Amplifier. Edit carefully: JSON does not allow a comma after the last item.",
+  "procedure": "RMB, HP3458A (9000-0083), 3458A_OGC.MX.N1091",
+  "b1": [
+    {
+      "slot": "Calibrator",
+      "equipment_id": "PN020001"
+    },
+    {
+      "slot": "Amplifier",
+      "equipment_id": "PN020000"
+    },
+    {
+      "slot": "Digital multimeter, 8.5 digit",
+      "equipment_id": "PN010068"
+    },
+    {
+      "slot": "AC Divider 10mV",
+      "equipment_id": "PN030002"
+    },
+    {
+      "slot": "AC Divider 100mV",
+      "equipment_id": "PN030000"
+    },
+    {
+      "slot": "0.1Ω Standard",
+      "equipment_id": "PN010069"
+    },
+    {
+      "slot": "1Ω Standard",
+      "equipment_id": "PN010001"
+    },
+    {
+      "slot": "10Ω Standard",
+      "equipment_id": "PN010003"
+    },
+    {
+      "slot": "100Ω Standard",
+      "equipment_id": "PN010005"
+    },
+    {
+      "slot": "1kΩ Standard",
+      "equipment_id": "PN010007"
+    },
+    {
+      "slot": "10kΩ Standard",
+      "equipment_id": "PN010009"
+    },
+    {
+      "slot": "100kΩ Standard",
+      "equipment_id": "PN010011"
+    },
+    {
+      "slot": "1MΩ Standard",
+      "equipment_id": "PN010013"
+    },
+    {
+      "slot": "10MΩ Standard",
+      "equipment_id": "PN010015"
+    },
+    {
+      "slot": "100MΩ Standard",
+      "equipment_id": "PN010016"
+    },
+    {
+      "slot": "1GΩ Standard",
+      "equipment_id": "PN010048"
+    },
+    {
+      "slot": "Waveform Generator 33600 Series, 120MHz, 2-channel",
+      "equipment_id": "PN010070"
+    },
+    {
+      "slot": "AC Measurement Standard",
+      "equipment_id": "PN010061"
+    },
+    {
+      "slot": "DC Reference Standard",
+      "equipment_id": "PN010064"
+    }
+  ],
+  "sets": [
+    {
+      "num": 1,
+      "calibrator": "PN020001",
+      "amplifier": "PN020000"
+    },
+    {
+      "num": 2,
+      "calibrator": "PN010052",
+      "amplifier": "PN010053"
+    },
+    {
+      "num": 3,
+      "calibrator": "PN020003",
+      "amplifier": "PN020002"
+    }
+  ]
+}

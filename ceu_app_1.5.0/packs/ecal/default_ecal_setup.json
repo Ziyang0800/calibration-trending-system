@@ -1,0 +1,100 @@
+{
+ "_note": "Active ETE of each ECal slot. Change them in the Setup page.",
+ "procedure": "Orion, ECAL (5959-9575), ECAL.CAL.N882",
+ "active": {
+  "N5230C": "PM01110",
+  "ET33700": "PM01265",
+  "ET33717": "PM01264",
+  "ET33733": "PM01129",
+  "ET36409": "PM01138",
+  "ET36442": "PM01185",
+  "ET51601": "PM01150",
+  "TORQUE": "EQ298703"
+ },
+ "masterlist": [
+  {
+   "set": "",
+   "model": "ET33700",
+   "equipment_id": "PM01265",
+   "serial": ""
+  },
+  {
+   "set": "",
+   "model": "ET33700",
+   "equipment_id": "PM01115",
+   "serial": ""
+  },
+  {
+   "set": "",
+   "model": "ET33717",
+   "equipment_id": "PM01264",
+   "serial": ""
+  },
+  {
+   "set": "",
+   "model": "ET33717",
+   "equipment_id": "PM01114",
+   "serial": ""
+  },
+  {
+   "set": "",
+   "model": "ET51601",
+   "equipment_id": "PM01303",
+   "serial": ""
+  },
+  {
+   "set": "",
+   "model": "ET51601",
+   "equipment_id": "PM01150",
+   "serial": ""
+  },
+  {
+   "set": "",
+   "model": "ET36409",
+   "equipment_id": "PM01138",
+   "serial": ""
+  },
+  {
+   "set": "",
+   "model": "ET36442",
+   "equipment_id": "PM01185",
+   "serial": ""
+  },
+  {
+   "set": "",
+   "model": "ET33733",
+   "equipment_id": "PM01129",
+   "serial": ""
+  },
+  {
+   "set": "",
+   "model": "ET33733",
+   "equipment_id": "PM01128",
+   "serial": ""
+  },
+  {
+   "set": "",
+   "model": "N5230C",
+   "equipment_id": "PM01110",
+   "serial": ""
+  },
+  {
+   "set": "",
+   "model": "HP-100",
+   "equipment_id": "EQ298703",
+   "serial": ""
+  },
+  {
+   "set": "",
+   "model": "H-50I",
+   "equipment_id": "PG0440",
+   "serial": ""
+  },
+  {
+   "set": "",
+   "model": "CD-100M",
+   "equipment_id": "PG0552",
+   "serial": ""
+  }
+ ]
+}

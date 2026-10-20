@@ -1,0 +1,15 @@
+{
+  "id": "example",
+  "name": "Example",
+  "version": "0.1.0",
+  "contract": 1,
+  "needs_shell": "1.5.0",
+  "owner": "your name",
+  "entry": "pack.py",
+  "tag": "Calibration Equipment Used",
+  "desc": "Copy this folder, rename it, change id/name here and the ETE list in config.json.",
+  "keywords": ["example"],
+  "detail": "Example product: a fixed list of required ETEs",
+  "procedure": "Example procedure line shown on the report",
+  "ui": {"html": "ui/job.html", "js": "ui/example.js", "css": ""}
+}

@@ -1,0 +1,15 @@
+{
+  "id": "ogc",
+  "name": "3458A OGC",
+  "version": "1.0.0",
+  "contract": 1,
+  "needs_shell": "1.5.0",
+  "owner": "",
+  "order": 0,
+  "entry": "pack.py",
+  "tag": "Calibration Equipment Used",
+  "desc": "HP/Agilent 3458A 8.5-digit multimeter, outgoing calibration: Station B-1 and B-2 ETEs.",
+  "keywords": ["3458A", "HP3458A", "OGC", "DMM", "8.5 digit", "multimeter", "3458"],
+  "detail": "HP/Agilent 3458A 8.5-digit multimeter",
+  "ui": {"html": "ui/job.html", "js": "ui/ogc.js", "css": "ui/ogc.css"}
+}

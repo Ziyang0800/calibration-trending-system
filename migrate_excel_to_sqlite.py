@@ -70,12 +70,16 @@ def _safe_float(val):
 
 
 def _read_meta_block(ws):
+    """Normalized metadata reader (space- and case-insensitive)."""
     meta = {}
-    for r in range(1, 6):
+    for r in range(1, 7):
         lbl = ws.cell(row=r, column=1).value
         val = ws.cell(row=r, column=2).value
         if lbl:
-            meta[str(lbl).strip()] = str(val).strip() if val is not None else ""
+            # Strip all spaces and punctuation: 'Serial Number' and 'SerialNumber' -> 'serialnumber'
+            clean_k = re.sub(r"[^a-z0-9]", "", str(lbl).lower())
+            clean_v = str(val).strip() if val is not None else ""
+            meta[clean_k] = clean_v
     return meta
 
 
@@ -84,11 +88,11 @@ def _read_meta_block(ws):
 # -----------------------------------------------------------------------------
 def migrate_sheet_template(ws, path: str, conn) -> int:
     meta = _read_meta_block(ws)
-    category_raw = meta.get("Category", "")
-    model = meta.get("Model")
-    serial = meta.get("Serial Number")
-    equip_id = meta.get("Equipment ID")
-    set_id = meta.get("Set ID")
+    category_raw = meta.get("category", "")
+    model = meta.get("model", "")
+    serial = meta.get("serialnumber") or meta.get("serial") or meta.get("sn")
+    equip_id = meta.get("equipmentid") or meta.get("assetnumber") or meta.get("traceid")
+    set_id = meta.get("setid") or meta.get("set")
 
     if not serial:
         return 0
