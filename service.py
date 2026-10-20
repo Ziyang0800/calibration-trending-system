@@ -108,86 +108,87 @@ class CalibrationService:
 
     def get_asset_detail(self, asset_id, tp_id=None):
         conn = self.get_conn()
-        detail = queries.get_asset_detail(conn, int(asset_id), selected_point_id=int(tp_id) if tp_id else None)
-        conn.close()
+        try:
+            detail = queries.get_asset_detail(conn, int(asset_id), selected_point_id=int(tp_id) if tp_id else None)
+            if not detail:
+                return None
 
-        if not detail:
-            return None
+            trend = detail.get("trend")
+            cals = detail.get("calibrations", [])
+            asset = detail.get("asset", {})
+            active_tp = detail.get("active_test_point") or {}
+            stability = detail.get("stability")
 
-        # Build comprehensive calculation traceability block
-        traceability = None
-        trend = detail.get("trend")
-        cals = detail.get("calibrations", [])
-        asset = detail.get("asset", {})
-        active_tp = detail.get("active_test_point") or {}
-        stability = detail.get("stability")
+            traceability = None
+            if trend and len(cals) >= 4:
+                n = trend["n"]
+                df = trend["df"]
+                t_crit = trend["t_crit"]
+                Syx = trend["Syx"]
+                xbar = trend["xbar"]
+                SSx = trend["SSx"]
+                slope = trend["slope"]
+                intercept = trend["intercept"]
 
-        if trend and len(cals) >= 4:
-            n = trend["n"]
-            df = trend["df"]
-            t_crit = trend["t_crit"]
-            Syx = trend["Syx"]
-            xbar = trend["xbar"]
-            SSx = trend["SSx"]
-            slope = trend["slope"]
-            intercept = trend["intercept"]
+                latest_cal = cals[-1]
+                x0 = latest_cal["accumulated_days"]
+                leverage = ((x0 - xbar) ** 2) / SSx if SSx != 0 else 0.0
+                margin = t_crit * Syx * math.sqrt(1.0 + (1.0 / n) + leverage) if SSx != 0 else 0.0
 
-            latest_cal = cals[-1]
-            x0 = latest_cal["accumulated_days"]
-            leverage = ((x0 - xbar) ** 2) / SSx if SSx != 0 else 0.0
-            margin = t_crit * Syx * math.sqrt(1 + (1 / n) + leverage) if SSx != 0 else 0.0
+                unit = asset.get("unit", "Ω")
+                drift_rate_year = slope * 365.25
+                if unit == "dB":
+                    rate_str = f"{drift_rate_year:+.5f} dB/year"
+                elif unit == "Ratio":
+                    nom = active_tp.get("nominal_value") or asset.get("nominal_ohms") or 1.0
+                    rate_str = f"{(drift_rate_year / nom * 1e6):+.2f} ppm/year"
+                else:
+                    nom = asset.get("nominal_ohms") or 1.0
+                    rate_str = f"{(drift_rate_year / nom * 1e6):+.2f} ppm/year"
 
-            unit = asset.get("unit", "Ω")
-            drift_rate_year = slope * 365.25
-            if unit == "dB":
-                rate_str = f"{drift_rate_year:+.5f} dB/year"
-            elif unit == "Ratio":
-                nom = active_tp.get("nominal_value") or asset.get("nominal_ohms") or 1.0
-                rate_str = f"{(drift_rate_year / nom * 1e6):+.2f} ppm/year"
-            else:
-                nom = asset.get("nominal_ohms") or 1.0
-                rate_str = f"{(drift_rate_year / nom * 1e6):+.2f} ppm/year"
+                stability_calc = None
+                if stability and stability.get("allowance_ppm") is not None:
+                    observed = stability["observed_drift_ppm"]
+                    allowance = stability["allowance_ppm"]
+                    consumed_pct = (abs(observed) / allowance * 100.0) if allowance != 0 else 0.0
+                    stability_calc = {
+                        "spec_description": stability.get("spec_description"),
+                        "previous_date": stability.get("previous_date"),
+                        "latest_date": stability.get("latest_date"),
+                        "elapsed_days": stability.get("elapsed_days"),
+                        "observed_drift_ppm": observed,
+                        "allowance_ppm": allowance,
+                        "consumed_percent": consumed_pct,
+                        "exceeds": stability.get("exceeds", False)
+                    }
 
-            stability_calc = None
-            if stability and stability.get("allowance_ppm") is not None:
-                observed = stability["observed_drift_ppm"]
-                allowance = stability["allowance_ppm"]
-                consumed_pct = (abs(observed) / allowance * 100.0) if allowance != 0 else 0.0
-                stability_calc = {
-                    "spec_description": stability.get("spec_description"),
-                    "previous_date": stability.get("previous_date"),
-                    "latest_date": stability.get("latest_date"),
-                    "elapsed_days": stability.get("elapsed_days"),
-                    "observed_drift_ppm": observed,
-                    "allowance_ppm": allowance,
-                    "consumed_percent": consumed_pct,
-                    "exceeds": stability.get("exceeds", False)
+                traceability = {
+                    "method_statement": "Hold-out anomaly evaluation (two-sided 95% prediction interval with Student's t expansion)",
+                    "equation": f"y = {intercept:.9f} + ({slope:.5e}) × Days",
+                    "slope": slope,
+                    "intercept": intercept,
+                    "annual_drift_rate": rate_str,
+                    "n": n,
+                    "df": df,
+                    "t_crit": t_crit,
+                    "Syx": Syx,
+                    "xbar": xbar,
+                    "SSx": SSx,
+                    "x0_latest_days": x0,
+                    "leverage": leverage,
+                    "prediction_margin": margin,
+                    "hold_out_date": latest_cal["date"],
+                    "is_out_of_trend": latest_cal.get("out_of_trend", False),
+                    "lower_bound": latest_cal.get("lower"),
+                    "upper_bound": latest_cal.get("upper"),
+                    "actual_reading": latest_cal["measured_value"],
+                    "stability_calc": stability_calc
                 }
 
-            traceability = {
-                "equation": f"y = {intercept:.9f} + ({slope:.5e}) × Days",
-                "slope": slope,
-                "intercept": intercept,
-                "annual_drift_rate": rate_str,
-                "n": n,
-                "df": df,
-                "t_crit": t_crit,
-                "Syx": Syx,
-                "xbar": xbar,
-                "SSx": SSx,
-                "x0_latest_days": x0,
-                "leverage": leverage,
-                "prediction_margin": margin,
-                "hold_out_date": latest_cal["date"],
-                "is_out_of_trend": latest_cal.get("out_of_trend", False),
-                "lower_bound": latest_cal.get("lower"),
-                "upper_bound": latest_cal.get("upper"),
-                "actual_reading": latest_cal["measured_value"],
-                "stability_calc": stability_calc
-            }
-
-        detail["traceability"] = traceability
-        return to_json_safe(detail)
+            detail["traceability"] = traceability
+            return to_json_safe(detail)
+        finally:
+            conn.close()
 
     def get_calibration_for_edit(self, calibration_id):
         conn = self.get_conn()
