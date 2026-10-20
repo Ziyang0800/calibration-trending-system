@@ -1,6 +1,6 @@
 """
-service.py - Desktop service layer providing state, trend calculations, 
-and file exports to pywebview with universal JSON serialization.
+service.py - Desktop service layer providing state, trend calculations,
+file exports, settings management, and full mathematical traceability.
 """
 
 import os
@@ -53,6 +53,28 @@ class CalibrationService:
     def get_conn(self):
         return db.connect(self.db_path)
 
+    def get_settings(self):
+        return to_json_safe({
+            "local_db_path": self.db_path,
+            "network_db_path": self.sync_mgr.get_network_path(),
+            "theme": self.setup.get("theme", "dark"),
+            "last_sync": self.sync_mgr.last_sync,
+            "last_status": self.sync_mgr.last_status,
+        })
+
+    def save_settings(self, new_settings):
+        if "network_db_path" in new_settings:
+            self.setup["network_db_path"] = str(new_settings["network_db_path"]).strip()
+        if "theme" in new_settings:
+            self.setup["theme"] = new_settings["theme"]
+            try:
+                import winchrome
+                winchrome.apply(self.setup["theme"], wait=False)
+            except Exception:
+                pass
+        store.write_json(self.dir / "setup.json", self.setup)
+        return to_json_safe({"ok": True})
+
     def get_sync_status(self):
         return to_json_safe({
             "last_sync": self.sync_mgr.last_sync,
@@ -81,12 +103,90 @@ class CalibrationService:
             "out_count": out_count,
             "insufficient_count": insufficient_count,
             "sync": self.get_sync_status(),
+            "theme": self.setup.get("theme", "dark"),
         })
 
     def get_asset_detail(self, asset_id, tp_id=None):
         conn = self.get_conn()
         detail = queries.get_asset_detail(conn, int(asset_id), selected_point_id=int(tp_id) if tp_id else None)
         conn.close()
+
+        if not detail:
+            return None
+
+        # Build comprehensive calculation traceability block
+        traceability = None
+        trend = detail.get("trend")
+        cals = detail.get("calibrations", [])
+        asset = detail.get("asset", {})
+        active_tp = detail.get("active_test_point") or {}
+        stability = detail.get("stability")
+
+        if trend and len(cals) >= 4:
+            n = trend["n"]
+            df = trend["df"]
+            t_crit = trend["t_crit"]
+            Syx = trend["Syx"]
+            xbar = trend["xbar"]
+            SSx = trend["SSx"]
+            slope = trend["slope"]
+            intercept = trend["intercept"]
+
+            latest_cal = cals[-1]
+            x0 = latest_cal["accumulated_days"]
+            leverage = ((x0 - xbar) ** 2) / SSx if SSx != 0 else 0.0
+            margin = t_crit * Syx * math.sqrt(1 + (1 / n) + leverage) if SSx != 0 else 0.0
+
+            unit = asset.get("unit", "Ω")
+            drift_rate_year = slope * 365.25
+            if unit == "dB":
+                rate_str = f"{drift_rate_year:+.5f} dB/year"
+            elif unit == "Ratio":
+                nom = active_tp.get("nominal_value") or asset.get("nominal_ohms") or 1.0
+                rate_str = f"{(drift_rate_year / nom * 1e6):+.2f} ppm/year"
+            else:
+                nom = asset.get("nominal_ohms") or 1.0
+                rate_str = f"{(drift_rate_year / nom * 1e6):+.2f} ppm/year"
+
+            stability_calc = None
+            if stability and stability.get("allowance_ppm") is not None:
+                observed = stability["observed_drift_ppm"]
+                allowance = stability["allowance_ppm"]
+                consumed_pct = (abs(observed) / allowance * 100.0) if allowance != 0 else 0.0
+                stability_calc = {
+                    "spec_description": stability.get("spec_description"),
+                    "previous_date": stability.get("previous_date"),
+                    "latest_date": stability.get("latest_date"),
+                    "elapsed_days": stability.get("elapsed_days"),
+                    "observed_drift_ppm": observed,
+                    "allowance_ppm": allowance,
+                    "consumed_percent": consumed_pct,
+                    "exceeds": stability.get("exceeds", False)
+                }
+
+            traceability = {
+                "equation": f"y = {intercept:.9f} + ({slope:.5e}) × Days",
+                "slope": slope,
+                "intercept": intercept,
+                "annual_drift_rate": rate_str,
+                "n": n,
+                "df": df,
+                "t_crit": t_crit,
+                "Syx": Syx,
+                "xbar": xbar,
+                "SSx": SSx,
+                "x0_latest_days": x0,
+                "leverage": leverage,
+                "prediction_margin": margin,
+                "hold_out_date": latest_cal["date"],
+                "is_out_of_trend": latest_cal.get("out_of_trend", False),
+                "lower_bound": latest_cal.get("lower"),
+                "upper_bound": latest_cal.get("upper"),
+                "actual_reading": latest_cal["measured_value"],
+                "stability_calc": stability_calc
+            }
+
+        detail["traceability"] = traceability
         return to_json_safe(detail)
 
     def get_calibration_for_edit(self, calibration_id):
@@ -96,7 +196,6 @@ class CalibrationService:
             conn.close()
             return None
 
-        # Load child test points if multi-point
         tp_rows = conn.execute(
             "SELECT cr.test_point_id, tp.point_name, cr.measured_value, cr.uncertainty "
             "FROM calibration_readings cr JOIN test_points tp ON tp.id = cr.test_point_id "
@@ -132,7 +231,6 @@ class CalibrationService:
             location=loc,
         )
 
-        # Update child test points if provided
         tp_readings = data.get("test_point_readings", [])
         if ok and tp_readings:
             for tpr in tp_readings:
@@ -150,7 +248,6 @@ class CalibrationService:
         conn = self.get_conn()
         from htbasic_export import SET_STATION_MAPPING, ZERO_POINT_ONE_OHM_OPTIONS, WFG_OPTIONS
 
-        # 1. Standard Resistors
         HTBASIC_RESISTORS = [
             {"file": "RESNOM.txt", "rx_tag": "1 Ω Std", "nominal": "1 Ω", "pn": "PN010022", "set": "Set 1"},
             {"file": "RESNOM.txt", "rx_tag": "1 Ω Std", "nominal": "1 Ω", "pn": "PN010001", "set": "Set 2"},
@@ -188,7 +285,6 @@ class CalibrationService:
                 "measured_value": row[2] if row else None,
             })
 
-        # 2. 0.1 Ohm Transfer Resistors
         zero_pt_one_details = {}
         for pn, label in ZERO_POINT_ONE_OHM_OPTIONS.items():
             row = conn.execute(
@@ -201,7 +297,6 @@ class CalibrationService:
                 "last_date": row[2] if row else "Missing", "last_measured": row[3] if row else None
             }
 
-        # 3. AC Voltage Dividers (All 12 Frequencies)
         div_pns = [
             ("PN030002", "10mV Block", "100:1", "Set 1"),
             ("PN030000", "100mV Block", "10:1", "Set 1"),
@@ -239,7 +334,6 @@ class CalibrationService:
                         "measured_value": r_val
                     })
 
-        # 4. Waveform Generator (All 11 cf Points for each 33622A)
         cf_points_def = [
             ("cf 10mV @ 4MHz (dB)", "10mV @ 4MHz"),
             ("cf 100mV @ 4MHz (dB)", "100mV @ 4MHz"),
@@ -337,7 +431,7 @@ class CalibrationService:
         return to_json_safe({"ok": True, "path": save_path})
 
     def import_certificate_file(self):
-        """Native Windows Open dialog to select and parse a Keysight PDF certificate."""
+        """Native Windows Open dialog to select and parse a PDF certificate."""
         pdf_path = winfile.open_file("Select Calibration Certificate PDF", filt="PDF files (*.pdf)\0*.pdf\0All files\0*.*\0")
         if not pdf_path:
             return to_json_safe({"ok": False, "cancelled": True})
@@ -351,7 +445,7 @@ class CalibrationService:
                 row = conn.execute("SELECT id, serial, model, asset_number, nominal_ohms, category, unit FROM assets WHERE serial = ?", (serial,)).fetchone()
                 if row:
                     asset = {"id": row[0], "serial": row[1], "model": row[2], "asset_number": row[3], "nominal_ohms": row[4], "category": row[5], "unit": row[6]}
-            
+
             known_nom = asset["nominal_ohms"] if asset else None
             meas = extract_measurement(pdf_path, known_nominal=known_nom)
             conn.close()
@@ -363,12 +457,33 @@ class CalibrationService:
                 "cal_date": id_fields["cal_date"].date().isoformat() if id_fields.get("cal_date") else "",
                 "measured_value": meas.get("measured_value"),
                 "mu_relative": meas.get("mu_relative"),
+                "warnings": meas.get("warnings", []),
                 "asset": asset,
             })
         except Exception as e:
             return to_json_safe({"ok": False, "error": str(e)})
 
+    def commit_imported_certificate(self, data):
+        """Commits verified certificate reading directly to database."""
+        conn = self.get_conn()
+        asset_id = int(data["asset_id"])
+        cal_date = data["cal_date"]
+        measured_value = float(data["measured_value"])
+        mu_relative = float(data.get("mu_relative", 0.0))
+        cert_number = data.get("cert_number") or None
+        cert_pdf_path = data.get("pdf_path") or None
+
+        cal_id = db.insert_calibration(
+            conn, asset_id, cal_date=cal_date, measured_value=measured_value,
+            mu_relative=mu_relative, source="pdf_import", cert_number=cert_number,
+            cert_pdf_path=cert_pdf_path
+        )
+        conn.commit()
+        conn.close()
+        return to_json_safe({"ok": True, "calibration_id": cal_id})
+
     def save_pdf_report(self, asset_ids=None):
+        """Automated report export with zero manual metadata fields required."""
         conn = self.get_conn()
         if not asset_ids:
             asset_ids = [r[0] for r in conn.execute("SELECT id FROM assets ORDER BY category, source_sheet, serial")]
@@ -386,19 +501,24 @@ class CalibrationService:
         conn.close()
         return to_json_safe({"ok": True, "path": save_path})
 
-    def export_excel(self, asset_id):
+    def export_excel(self, asset_id: int):
         conn = self.get_conn()
-        row = conn.execute("SELECT serial FROM assets WHERE id = ?", (int(asset_id),)).fetchone()
-        serial = row[0] if row else "asset"
-        default_name = f"asset_{serial}_{datetime.now():%Y%m%d_%H%M%S}.xlsx"
-        dest_folder = str(Path.home() / "Documents" / "Calibration Exports")
-        Path(dest_folder).mkdir(parents=True, exist_ok=True)
+        try:
+            row = conn.execute("SELECT serial FROM assets WHERE id = ?", (int(asset_id),)).fetchone()
+            serial = row[0] if row else "asset"
+            default_name = f"asset_{serial}_{datetime.now():%Y%m%d_%H%M%S}.xlsx"
+            dest_folder = str(Path.home() / "Documents" / "Calibration Exports")
+            Path(dest_folder).mkdir(parents=True, exist_ok=True)
 
-        save_path = winfile.save_file("Export Asset to Excel", dest_folder, default_name, filt="Excel files (*.xlsx)\0*.xlsx\0", ext="xlsx")
-        if not save_path:
+            save_path = winfile.save_file(
+                "Export Asset to Excel", dest_folder, default_name,
+                filt="Excel files (*.xlsx)\0*.xlsx\0", ext="xlsx"
+            )
+            if not save_path:
+                return to_json_safe({"ok": False, "cancelled": True})
+
+            # Strictly honor the exact user-selected path
+            actual_path = export_excel.export_single_asset(conn, int(asset_id), out_path=save_path)
+            return to_json_safe({"ok": True, "path": actual_path})
+        finally:
             conn.close()
-            return to_json_safe({"ok": False, "cancelled": True})
-
-        export_excel.export_single_asset(conn, int(asset_id), out_dir=str(Path(save_path).parent))
-        conn.close()
-        return to_json_safe({"ok": True, "path": save_path})
