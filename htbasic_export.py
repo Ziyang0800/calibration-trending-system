@@ -9,6 +9,11 @@ Generates the complete suite of legacy HTBasic 3458A test station files:
   5. Station File        (286300.txt for B-1 / 286325.txt for B-2)
   6. DIVMEANS.TXT        (AC Dividers: 10mV and 100mV across 6 frequencies)
   7. 90xxxx_Extended.txt (33622A 11 cf Data points with cal date and due date)
+
+Safety Rules:
+  - Zero silent fallbacks: missing live calibration data strictly raises ValueError.
+  - Zero default zeroes: missing 33622A factors fail validation instead of writing 0.0 dB.
+  - Byte-level ASCII and CRLF line ending validation on all generated files.
 """
 
 import os
@@ -46,11 +51,51 @@ ZERO_POINT_ONE_OHM_OPTIONS = {
     "PN010069": "PN010069 (Set 3's 0.1 Ohm)",
 }
 
+WFG_OPTIONS = {
+    "SG53800187": {
+        "file_id": "902470",
+        "serial": "SG53800187",
+        "pn": "PAA0311",
+        "default_set": "Set 1",
+        "label": "902470 (Set 1 - PAA0311 / SG53800187)"
+    },
+    "MY53802790": {
+        "file_id": "906099",
+        "serial": "MY53802790",
+        "pn": "PN010063",
+        "default_set": "Set 2",
+        "label": "906099 (Set 2 - PN010063 / MY53802790)"
+    },
+    "MY59000394": {
+        "file_id": "906773",
+        "serial": "MY59000394",
+        "pn": "PN010070",
+        "default_set": "Set 3",
+        "label": "906773 (Set 3 - PN010070 / MY59000394)"
+    },
+}
+
+REQUIRED_DIVIDER_FREQS = ["1 kHz", "20 kHz", "100 kHz", "300 kHz", "500 kHz", "1 MHz"]
+
+WFG_CF_POINTS = [
+    ("cf 10mV @ 4MHz (dB)", "10mV, 4MHz dB error"),
+    ("cf 100mV @ 4MHz (dB)", "100mV, 4MHz dB error"),
+    ("cf 100mV @ 8MHz (dB)", "100mV, 8MHz dB error"),
+    ("cf 100mV @ 10MHz (dB)", "100mV, 10MHz dB error"),
+    ("cf 1V @ 4MHz (dB)", "1V, 4MHz dB error"),
+    ("cf 1V @ 8MHz (dB)", "1V, 8MHz dB error"),
+    ("cf 1V @ 10MHz (dB)", "1V, 10MHz dB error"),
+    ("cf 3V @ 2MHz (dB)", "3V, 2MHz dB error"),
+    ("cf 3V @ 4MHz (dB)", "3V, 4MHz dB error"),
+    ("cf 3V @ 8MHz (dB)", "3V, 8MHz dB error"),
+    ("cf 3V @ 10MHz (dB)", "3V, 10MHz dB error"),
+]
+
 
 def _read_template_lines(filename: str) -> list:
     path = os.path.join(TEMPLATE_DIR, filename)
     if not os.path.exists(path):
-        return []
+        raise FileNotFoundError(f"Required HTBasic template missing: {path}")
     with open(path, "rb") as f:
         text = f.read().decode("ascii")
     return text.split("\r\n")
@@ -70,7 +115,7 @@ def get_latest_value(conn, asset_number: str):
 def _patch_value_line(line: str, pn: str, conn) -> str:
     new_value = get_latest_value(conn, pn)
     if new_value is None:
-        raise ValueError(f"No calibration value available for {pn}")
+        raise ValueError(f"No active calibration reading found in database for reference standard {pn}")
 
     leading_ws = line[: len(line) - len(line.lstrip())]
     rest = line.lstrip()
@@ -135,7 +180,7 @@ def generate_station_file(conn, set_name: str, zero_pt_one_pn: str) -> tuple:
 
 
 # -----------------------------------------------------------------------------
-# 2. AC Voltage Divider Generator (DIVMEANS.TXT)
+# 2. AC Voltage Divider Generator (DIVMEANS.TXT - Strict, No Fallbacks)
 # -----------------------------------------------------------------------------
 def get_divider_ratios(conn, pn: str) -> dict:
     asset = conn.execute("SELECT id FROM assets WHERE asset_number = ?", (pn,)).fetchone()
@@ -143,9 +188,8 @@ def get_divider_ratios(conn, pn: str) -> dict:
         return {}
     asset_id = asset[0]
 
-    freqs = ["1 kHz", "20 kHz", "100 kHz", "300 kHz", "500 kHz", "1 MHz"]
     ratios = {}
-    for f in freqs:
+    for f in REQUIRED_DIVIDER_FREQS:
         row = conn.execute(
             "SELECT cr.measured_value FROM calibrations c "
             "JOIN calibration_readings cr ON cr.calibration_id = c.id "
@@ -154,18 +198,30 @@ def get_divider_ratios(conn, pn: str) -> dict:
             "ORDER BY c.cal_date DESC LIMIT 1",
             (asset_id, f)
         ).fetchone()
-        if row:
+        if row and row[0] is not None:
             ratios[f] = row[0]
     return ratios
 
 
 def generate_divmeans(conn, set_name: str) -> str:
     cfg = SET_STATION_MAPPING[set_name]
-    r_10mv = get_divider_ratios(conn, cfg["divider_10mv"])
-    r_100mv = get_divider_ratios(conn, cfg["divider_100mv"])
+    pn_10mv = cfg["divider_10mv"]
+    pn_100mv = cfg["divider_100mv"]
+
+    r_10mv = get_divider_ratios(conn, pn_10mv)
+    r_100mv = get_divider_ratios(conn, pn_100mv)
+
+    # Strictly verify all 6 frequencies exist (Zero fallback allowed)
+    missing_10 = [f for f in REQUIRED_DIVIDER_FREQS if f not in r_10mv]
+    missing_100 = [f for f in REQUIRED_DIVIDER_FREQS if f not in r_100mv]
+
+    if missing_10:
+        raise ValueError(f"Cannot generate DIVMEANS.TXT: 10mV divider {pn_10mv} is missing live calibration ratios for: {missing_10}")
+    if missing_100:
+        raise ValueError(f"Cannot generate DIVMEANS.TXT: 100mV divider {pn_100mv} is missing live calibration ratios for: {missing_100}")
 
     lines = [
-        # 1mV (Fixed/Untracked standard)
+        # 1mV (Fixed standards lab characterization standard)
         "1000.280 ! DC-1kHz (For 1mV) PENANG DATA MF",
         "1000.280 ! DC-1kHz (1mV)",
         "1000.280 ! DC-1kHz (1mV)",
@@ -176,87 +232,64 @@ def generate_divmeans(conn, set_name: str) -> str:
         "999.042  ! 500kHz  (1mV)",
         "1004.203 ! 1MHz    (1mV)",
 
-        # 3mV (Same ratios as 10mV)
-        f"{r_10mv.get('1 kHz', 100.9039):.4f} ! DC-1kHz (For 3mV) SAME AS 10mV {cfg['divider_10mv']}",
-        f"{r_10mv.get('1 kHz', 100.9039):.4f} ! DC-1kHz (3mV)",
-        f"{r_10mv.get('1 kHz', 100.9039):.4f} ! DC-1kHz (3mV)",
-        f"{r_10mv.get('1 kHz', 100.9039):.4f} ! DC-1kHz (3mV)",
-        f"{r_10mv.get('20 kHz', 100.9009):.4f} ! 20kHz   (3mV)",
-        f"{r_10mv.get('100 kHz', 100.8861):.4f} ! 100kHz  (3mV)",
-        f"{r_10mv.get('300 kHz', 100.8343):.4f} ! 300kHz  (3mV)",
-        f"{r_10mv.get('500 kHz', 100.7824):.4f} ! 500kHz  (3mV)",
-        f"{r_10mv.get('1 MHz', 100.5989):.4f} ! 1MHz    (3mV)",
+        # 3mV (Characterized using same ratios as 10mV)
+        f"{r_10mv['1 kHz']:.4f} ! DC-1kHz (For 3mV) SAME AS 10mV {pn_10mv}",
+        f"{r_10mv['1 kHz']:.4f} ! DC-1kHz (3mV)",
+        f"{r_10mv['1 kHz']:.4f} ! DC-1kHz (3mV)",
+        f"{r_10mv['1 kHz']:.4f} ! DC-1kHz (3mV)",
+        f"{r_10mv['20 kHz']:.4f} ! 20kHz   (3mV)",
+        f"{r_10mv['100 kHz']:.4f} ! 100kHz  (3mV)",
+        f"{r_10mv['300 kHz']:.4f} ! 300kHz  (3mV)",
+        f"{r_10mv['500 kHz']:.4f} ! 500kHz  (3mV)",
+        f"{r_10mv['1 MHz']:.4f} ! 1MHz    (3mV)",
 
         # 10mV
-        f"{r_10mv.get('1 kHz', 100.9039):.4f} ! DC-1kHz (For 10mV) {cfg['divider_10mv']}",
-        f"{r_10mv.get('1 kHz', 100.9039):.4f} ! DC-1kHz (10mV)",
-        f"{r_10mv.get('1 kHz', 100.9039):.4f} ! DC-1kHz (10mV)",
-        f"{r_10mv.get('1 kHz', 100.9039):.4f} ! DC-1kHz (10mV)",
-        f"{r_10mv.get('20 kHz', 100.9009):.4f} ! 20kHz   (10mV)",
-        f"{r_10mv.get('100 kHz', 100.8861):.4f} ! 100kHz  (10mV)",
-        f"{r_10mv.get('300 kHz', 100.8343):.4f} ! 300kHz  (10mV)",
-        f"{r_10mv.get('500 kHz', 100.7824):.4f} ! 500kHz  (10mV)",
-        f"{r_10mv.get('1 MHz', 100.5989):.4f} ! 1MHz    (10mV)",
+        f"{r_10mv['1 kHz']:.4f} ! DC-1kHz (For 10mV) {pn_10mv}",
+        f"{r_10mv['1 kHz']:.4f} ! DC-1kHz (10mV)",
+        f"{r_10mv['1 kHz']:.4f} ! DC-1kHz (10mV)",
+        f"{r_10mv['1 kHz']:.4f} ! DC-1kHz (10mV)",
+        f"{r_10mv['20 kHz']:.4f} ! 20kHz   (10mV)",
+        f"{r_10mv['100 kHz']:.4f} ! 100kHz  (10mV)",
+        f"{r_10mv['300 kHz']:.4f} ! 300kHz  (10mV)",
+        f"{r_10mv['500 kHz']:.4f} ! 500kHz  (10mV)",
+        f"{r_10mv['1 MHz']:.4f} ! 1MHz    (10mV)",
 
-        # 30mV (Same ratios as 100mV)
-        f"{r_100mv.get('1 kHz', 10.04839):.5f} ! DC-1kHz (For 30mV) SAME AS 100mV {cfg['divider_100mv']}",
-        f"{r_100mv.get('1 kHz', 10.04839):.5f} ! DC-1kHz (30mV)",
-        f"{r_100mv.get('1 kHz', 10.04839):.5f} ! DC-1kHz (30mV)",
-        f"{r_100mv.get('1 kHz', 10.04839):.5f} ! DC-1kHz (30mV)",
-        f"{r_100mv.get('20 kHz', 10.04864):.5f} ! 20kHz   (30mV)",
-        f"{r_100mv.get('100 kHz', 10.04811):.5f} ! 100kHz  (30mV)",
-        f"{r_100mv.get('300 kHz', 10.04748):.5f} ! 300kHz  (30mV)",
-        f"{r_100mv.get('500 kHz', 10.04640):.5f} ! 500kHz  (30mV)",
-        f"{r_100mv.get('1 MHz', 10.04321):.5f} ! 1MHZ    (30mV)",
+        # 30mV (Characterized using same ratios as 100mV)
+        f"{r_100mv['1 kHz']:.5f} ! DC-1kHz (For 30mV) SAME AS 100mV {pn_100mv}",
+        f"{r_100mv['1 kHz']:.5f} ! DC-1kHz (30mV)",
+        f"{r_100mv['1 kHz']:.5f} ! DC-1kHz (30mV)",
+        f"{r_100mv['1 kHz']:.5f} ! DC-1kHz (30mV)",
+        f"{r_100mv['20 kHz']:.5f} ! 20kHz   (30mV)",
+        f"{r_100mv['100 kHz']:.5f} ! 100kHz  (30mV)",
+        f"{r_100mv['300 kHz']:.5f} ! 300kHz  (30mV)",
+        f"{r_100mv['500 kHz']:.5f} ! 500kHz  (30mV)",
+        f"{r_100mv['1 MHz']:.5f} ! 1MHZ    (30mV)",
 
         # 100mV
-        f"{r_100mv.get('1 kHz', 10.04839):.5f} ! DC-1kHz (For 100mV) {cfg['divider_100mv']}",
-        f"{r_100mv.get('1 kHz', 10.04839):.5f} ! DC-1kHz (100mV)",
-        f"{r_100mv.get('1 kHz', 10.04839):.5f} ! DC-1kHz (100mV)",
-        f"{r_100mv.get('1 kHz', 10.04839):.5f} ! DC-1kHz (100mV)",
-        f"{r_100mv.get('20 kHz', 10.04864):.5f} ! 20kHz   (100mV)",
-        f"{r_100mv.get('100 kHz', 10.04811):.5f} ! 100kHz  (100mV)",
-        f"{r_100mv.get('300 kHz', 10.04748):.5f} ! 300kHz  (100mV)",
-        f"{r_100mv.get('500 kHz', 10.04640):.5f} ! 500kHz  (100mV)",
-        f"{r_100mv.get('1 MHz', 10.04321):.5f} ! 1MHZ    (100mV)",
+        f"{r_100mv['1 kHz']:.5f} ! DC-1kHz (For 100mV) {pn_100mv}",
+        f"{r_100mv['1 kHz']:.5f} ! DC-1kHz (100mV)",
+        f"{r_100mv['1 kHz']:.5f} ! DC-1kHz (100mV)",
+        f"{r_100mv['1 kHz']:.5f} ! DC-1kHz (100mV)",
+        f"{r_100mv['20 kHz']:.5f} ! 20kHz   (100mV)",
+        f"{r_100mv['100 kHz']:.5f} ! 100kHz  (100mV)",
+        f"{r_100mv['300 kHz']:.5f} ! 300kHz  (100mV)",
+        f"{r_100mv['500 kHz']:.5f} ! 500kHz  (100mV)",
+        f"{r_100mv['1 MHz']:.5f} ! 1MHZ    (100mV)",
     ]
     return "\r\n".join(lines)
 
 
 # -----------------------------------------------------------------------------
-# 3. Waveform Generator Generator (90xxxx_Extended.txt)
+# 3. Waveform Generator Generator (90xxxx_Extended.txt - Strict, No Zero Injection)
 # -----------------------------------------------------------------------------
-
-# The three selectable 33622A Waveform Generators
-WFG_OPTIONS = {
-    "SG53800187": {
-        "file_id": "902470",
-        "serial": "SG53800187",
-        "pn": "PAA0311",
-        "default_set": "Set 1",
-        "label": "902470 (Set 1 - PAA0311 / SG53800187)"
-    },
-    "MY53802790": {
-        "file_id": "906099",
-        "serial": "MY53802790",
-        "pn": "PN010063",
-        "default_set": "Set 2",
-        "label": "906099 (Set 2 - PN010063 / MY53802790)"
-    },
-    "MY59000394": {
-        "file_id": "906773",
-        "serial": "MY59000394",
-        "pn": "PN010070",
-        "default_set": "Set 3",
-        "label": "906773 (Set 3 - PN010070 / MY59000394)"
-    },
-}
-
 def generate_33622a_extended(conn, wfg_serial: str) -> tuple:
-    cfg = WFG_OPTIONS.get(wfg_serial, WFG_OPTIONS["SG53800187"])
+    if wfg_serial not in WFG_OPTIONS:
+        raise ValueError(f"Unrecognized 33622A serial number: '{wfg_serial}'")
+
+    cfg = WFG_OPTIONS[wfg_serial]
     asset = conn.execute("SELECT id, serial FROM assets WHERE serial = ?", (cfg["serial"],)).fetchone()
     if not asset:
-        return f"{cfg['file_id']}_Extended.txt", ""
+        raise ValueError(f"33622A waveform generator (Serial {cfg['serial']}) is not registered in the database.")
     asset_id, serial = asset
 
     cal_row = conn.execute(
@@ -264,41 +297,35 @@ def generate_33622a_extended(conn, wfg_serial: str) -> tuple:
         (asset_id,)
     ).fetchone()
     if not cal_row:
-        return f"{cfg['file_id']}_Extended.txt", ""
+        raise ValueError(f"33622A waveform generator (Serial {serial}) has no recorded calibration history.")
     cal_id, cal_date_str = cal_row
 
     cal_d = date.fromisoformat(cal_date_str[:10])
     cal_date_fmt = cal_d.strftime("%d %b %Y")
     cal_due_fmt = (cal_d + relativedelta(months=6)).strftime("%d %b %Y")
 
-    cf_points = [
-        ("cf 10mV @ 4MHz (dB)", "10mV, 4MHz dB error"),
-        ("cf 100mV @ 4MHz (dB)", "100mV, 4MHz dB error"),
-        ("cf 100mV @ 8MHz (dB)", "100mV, 8MHz dB error"),
-        ("cf 100mV @ 10MHz (dB)", "100mV, 10MHz dB error"),
-        ("cf 1V @ 4MHz (dB)", "1V, 4MHz dB error"),
-        ("cf 1V @ 8MHz (dB)", "1V, 8MHz dB error"),
-        ("cf 1V @ 10MHz (dB)", "1V, 10MHz dB error"),
-        ("cf 3V @ 2MHz (dB)", "3V, 2MHz dB error"),
-        ("cf 3V @ 4MHz (dB)", "3V, 4MHz dB error"),
-        ("cf 3V @ 8MHz (dB)", "3V, 8MHz dB error"),
-        ("cf 3V @ 10MHz (dB)", "3V, 10MHz dB error"),
-    ]
-
     lines = [
         f"{cal_date_fmt} ! Cal Date for 33622A  {cfg['file_id']} {serial}",
         f"{cal_due_fmt} ! Cal Due",
     ]
 
-    for pt_name, comment in cf_points:
+    missing_pts = []
+    for pt_name, comment in WFG_CF_POINTS:
         row = conn.execute(
             "SELECT cr.measured_value FROM calibration_readings cr "
             "JOIN test_points tp ON tp.id = cr.test_point_id "
             "WHERE cr.calibration_id = ? AND tp.point_name = ?",
             (cal_id, pt_name)
         ).fetchone()
-        val = row[0] if row else 0.0
-        lines.append(f"{val:+.5f} ! {comment}")
+
+        if row is None or row[0] is None:
+            missing_pts.append(pt_name)
+        else:
+            val = float(row[0])
+            lines.append(f"{val:+.5f} ! {comment}")
+
+    if missing_pts:
+        raise ValueError(f"Cannot generate {cfg['file_id']}_Extended.txt: Missing readings for calibration factor(s): {missing_pts}")
 
     filename = f"{cfg['file_id']}_Extended.txt"
     return filename, "\r\n".join(lines)
@@ -309,9 +336,12 @@ def generate_33622a_extended(conn, wfg_serial: str) -> tuple:
 # -----------------------------------------------------------------------------
 def validate_required_resistors(conn, set_name: str, zero_pt_one_pn: str, wfg_serial: str = "SG53800187") -> list:
     problems = []
+    if set_name not in SET_STATION_MAPPING:
+        return [{"nominal": "Station Set", "asset_number": set_name, "issue": "Invalid station set selected"}]
+
     cfg = SET_STATION_MAPPING[set_name]
 
-    # Required resistors
+    # Required 11 Resistors
     req_resistors = [
         ("0.1 Ω", zero_pt_one_pn),
         ("1 Ω", cfg["1"]),
@@ -329,32 +359,73 @@ def validate_required_resistors(conn, set_name: str, zero_pt_one_pn: str, wfg_se
     for nom, pn in req_resistors:
         val = get_latest_value(conn, pn)
         if val is None:
-            problems.append({"nominal": nom, "asset_number": pn, "issue": "Missing calibration history"})
+            problems.append({"nominal": nom, "asset_number": pn, "issue": "Missing calibration history in database"})
 
-    # Check AC Dividers for chosen set
+    # Check AC Dividers (Both 10mV and 100mV across all 6 frequencies)
     for div_nom, div_pn in [("10mV Divider", cfg["divider_10mv"]), ("100mV Divider", cfg["divider_100mv"])]:
         r_dict = get_divider_ratios(conn, div_pn)
-        if len(r_dict) < 6:
-            problems.append({"nominal": div_nom, "asset_number": div_pn, "issue": f"Missing frequency ratios ({len(r_dict)}/6 available)"})
+        missing_freqs = [f for f in REQUIRED_DIVIDER_FREQS if f not in r_dict]
+        if missing_freqs:
+            problems.append({
+                "nominal": div_nom,
+                "asset_number": div_pn,
+                "issue": f"Missing frequency ratio readings: {', '.join(missing_freqs)} ({len(r_dict)}/6 available)"
+            })
 
-    # Check specifically SELECTED 33622A
-    wfg_cfg = WFG_OPTIONS.get(wfg_serial, WFG_OPTIONS["SG53800187"])
-    wfg_asset = conn.execute("SELECT id FROM assets WHERE serial = ?", (wfg_cfg["serial"],)).fetchone()
-    if not wfg_asset:
-        problems.append({"nominal": "Waveform Gen", "asset_number": wfg_cfg["serial"], "issue": "Asset not registered in database"})
+    # Check 33622A Waveform Generator (All 11 factors)
+    wfg_cfg = WFG_OPTIONS.get(wfg_serial)
+    if not wfg_cfg:
+        problems.append({"nominal": "Waveform Gen", "asset_number": wfg_serial, "issue": "Unrecognized serial number"})
     else:
-        c_count = conn.execute("SELECT COUNT(*) FROM calibrations WHERE asset_id = ?", (wfg_asset[0],)).fetchone()[0]
-        if c_count == 0:
-            problems.append({"nominal": "Waveform Gen", "asset_number": wfg_cfg["serial"], "issue": "No calibration history on file"})
+        wfg_asset = conn.execute("SELECT id FROM assets WHERE serial = ?", (wfg_cfg["serial"],)).fetchone()
+        if not wfg_asset:
+            problems.append({"nominal": "Waveform Gen", "asset_number": wfg_cfg["serial"], "issue": "Asset not registered in database"})
+        else:
+            latest_cal = conn.execute(
+                "SELECT id FROM calibrations WHERE asset_id = ? ORDER BY cal_date DESC LIMIT 1",
+                (wfg_asset[0],)
+            ).fetchone()
+            if not latest_cal:
+                problems.append({"nominal": "Waveform Gen", "asset_number": wfg_cfg["serial"], "issue": "No calibration history on file"})
+            else:
+                cal_id = latest_cal[0]
+                missing_cf = []
+                for pt_name, _ in WFG_CF_POINTS:
+                    r = conn.execute(
+                        "SELECT cr.measured_value FROM calibration_readings cr "
+                        "JOIN test_points tp ON tp.id = cr.test_point_id "
+                        "WHERE cr.calibration_id = ? AND tp.point_name = ?",
+                        (cal_id, pt_name)
+                    ).fetchone()
+                    if r is None or r[0] is None:
+                        missing_cf.append(pt_name)
+                if missing_cf:
+                    problems.append({
+                        "nominal": "Waveform Gen",
+                        "asset_number": wfg_cfg["serial"],
+                        "issue": f"Missing {len(missing_cf)}/11 factors: {', '.join(missing_cf)}"
+                    })
 
     return problems
 
 
+# -----------------------------------------------------------------------------
+# 5. Master Package Generator with Strict Integrity Checks
+# -----------------------------------------------------------------------------
 def generate_all_files(conn, set_name: str, zero_pt_one_pn: str, wfg_serial: str = "SG53800187") -> dict:
+    """
+    Compiles all 7 station files.
+    Pre-validates against missing data and verifies pure ASCII encoding and CRLF endings.
+    """
+    problems = validate_required_resistors(conn, set_name, zero_pt_one_pn, wfg_serial)
+    if problems:
+        issues = "; ".join(f"{p['nominal']} ({p['asset_number']}): {p['issue']}" for p in problems)
+        raise ValueError(f"Pre-flight verification failed. Package generation blocked: {issues}")
+
     station_filename, station_content = generate_station_file(conn, set_name, zero_pt_one_pn)
     wfg_filename, wfg_content = generate_33622a_extended(conn, wfg_serial)
 
-    return {
+    files = {
         "RESNOM.txt": generate_resnom(conn, set_name),
         "RESVALUE.TXT": generate_resvalue(conn, set_name),
         "HIGHRES.txt": generate_highres(conn, set_name),
@@ -363,3 +434,16 @@ def generate_all_files(conn, set_name: str, zero_pt_one_pn: str, wfg_serial: str
         "DIVMEANS.TXT": generate_divmeans(conn, set_name),
         wfg_filename: wfg_content,
     }
+
+    # Strict structural and byte-level validation
+    for fname, content in files.items():
+        if not content:
+            raise ValueError(f"Generated file '{fname}' is empty.")
+        try:
+            content.encode("ascii")
+        except UnicodeEncodeError as e:
+            raise ValueError(f"Generated file '{fname}' contains non-ASCII characters: {e}")
+        if "\n" in content and "\r\n" not in content:
+            raise ValueError(f"Generated file '{fname}' does not have strict CRLF line endings.")
+
+    return files
