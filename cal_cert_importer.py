@@ -37,6 +37,7 @@ Design notes / limitations (read before trusting this in production):
 import argparse
 import logging
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -77,28 +78,86 @@ _VALUE_UNIT_RE = re.compile(r"([\d.][\d.\s]*)\s*([pnu\u00b5mkKMG]?)\s*[\u03a9QO]
 
 # ---------------------------------------------------------------- PDF parsing
 
-def extract_serial_and_date(pdf_path: str) -> dict:
+def extract_serial_and_date(pdf_path: str, tesseract_cmd: str = None) -> dict:
+    """Extract serial, calibration date, and certificate number from text or scanned headers.
+
+    Keysight certificate formats vary: combined certificates often use
+    "Serial Number" / "Date of Calibration", while Fluke 732A/C reports may
+    be scanned and use "S/N" / "DATE". OCR is used only for pages without a
+    usable text layer.
+    """
+    chunks = []
     with pdfplumber.open(pdf_path) as pdf:
-        page1_text = pdf.pages[0].extract_text() or ""
-    serial_m = re.search(r"Serial Number\s+(\S+)", page1_text)
-    date_m = re.search(r"Date of Calibration\s+(\d{1,2}\s+\w+\s+\d{4})", page1_text)
-    return {
-        "serial": serial_m.group(1) if serial_m else None,
-        "cal_date": datetime.strptime(date_m.group(1), "%d %b %Y") if date_m else None,
-    }
+        if not pdf.pages:
+            raise ValueError("The selected PDF contains no pages.")
+        for page in pdf.pages[:2]:
+            text = page.extract_text() or ""
+            if not text.strip():
+                try:
+                    text = _ocr_page(page, tesseract_cmd, psm=3)
+                except RuntimeError as exc:
+                    logger.warning("Header OCR failed for %s: %s", pdf_path, exc)
+                    text = ""
+            chunks.append(text)
+    header_text = "\n".join(chunks)
+
+    serial_patterns = (
+        r"Serial\s+Number\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9._/-]*)",
+        r"\bS\s*/\s*N\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9._/-]*)",
+        r"\bSER(?:IAL)?\.?\s*NO\.?\s*[:#]?\s*([A-Za-z0-9][A-Za-z0-9._/-]*)",
+    )
+    serial = None
+    for pattern in serial_patterns:
+        match = re.search(pattern, header_text, re.I)
+        if match:
+            serial = match.group(1).strip(" .,:;")
+            break
+
+    date_patterns = (
+        r"Date\s+of\s+Calibration\s*:?\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})",
+        r"\bDATE\s*:?\s*(\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})",
+    )
+    cal_date = None
+    for pattern in date_patterns:
+        match = re.search(pattern, header_text, re.I)
+        if not match:
+            continue
+        raw_date = re.sub(r"\s+", " ", match.group(1).strip())
+        for fmt in ("%d %b %Y", "%d %B %Y"):
+            try:
+                cal_date = datetime.strptime(raw_date, fmt)
+                break
+            except ValueError:
+                continue
+        if cal_date:
+            break
+
+    cert_match = re.search(r"\b(?:CERT(?:IFICATE)?\s*(?:NO\.?|NUMBER)?\s*[:#]?\s*:?\s*)(WO[- ]?\d{6,})", header_text, re.I)
+    cert_number = re.sub(r"\s+", "", cert_match.group(1)).replace(" ", "-") if cert_match else None
+    return {"serial": serial, "cal_date": cal_date, "cert_number": cert_number}
 
 
 def extract_measurement(pdf_path: str, known_nominal: float = None, tesseract_cmd: str = None) -> dict:
+    """Extract the legacy resistor result only; other categories need point-level data."""
+    diagnostics = []
     with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
+        for page_number, page in enumerate(pdf.pages, start=1):
             text = page.extract_text() or ""
             if not text.strip():
-                text = _ocr_page(page, tesseract_cmd)
+                try:
+                    text = _ocr_page(page, tesseract_cmd)
+                except RuntimeError as exc:
+                    raise RuntimeError(f"Could not OCR PDF page {page_number}: {exc}") from exc
             if "MEASURED VALUE" in text.upper():
                 measured_value, mu_relative, warnings = _parse_measurement_line(text, known_nominal)
-                if measured_value is not None:
+                if measured_value is not None and mu_relative is not None:
                     return {"measured_value": measured_value, "mu_relative": mu_relative, "warnings": warnings}
-    return {"measured_value": None, "mu_relative": None, "warnings": []}
+                diagnostics.append(f"Page {page_number} contains 'MEASURED VALUE' but the resistor value/MU row could not be parsed.")
+            elif text.strip():
+                diagnostics.append(f"Page {page_number}: no 'MEASURED VALUE' table header found.")
+    if not diagnostics:
+        diagnostics.append("No readable text or measurement table was found in the PDF.")
+    return {"measured_value": None, "mu_relative": None, "warnings": diagnostics}
 
 
 _TESSERACT_FALLBACK_PATHS = [
@@ -110,37 +169,45 @@ _TESSERACT_FALLBACK_PATHS = [
 
 
 def _find_tesseract() -> str:
-    import shutil
     found = shutil.which("tesseract")
     if found:
         return found
     for candidate in _TESSERACT_FALLBACK_PATHS:
         if Path(candidate).exists():
             return candidate
-    sys.exit(
-        "Could not find tesseract.exe. Install Tesseract OCR "
-        "(https://github.com/UB-Mannheim/tesseract/wiki for Windows) - the "
-        "default install location is checked automatically, so you do NOT "
-        "need to add it to PATH. If you installed it somewhere else, pass "
-        "--tesseract-exe \"C:\\path\\to\\tesseract.exe\"."
+    raise RuntimeError(
+        "Tesseract OCR was not found. Install Tesseract (Windows installer: "
+        "https://github.com/UB-Mannheim/tesseract/wiki) or configure its executable path."
     )
 
 
-def _ocr_page(page, tesseract_cmd: str = None) -> str:
-    im = page.to_image(resolution=600)
-    tmp_png = Path(tempfile.gettempdir()) / "_cert_page_ocr.png"
-    im.save(str(tmp_png))
+def _ocr_page(page, tesseract_cmd: str = None, psm: int = 6) -> str:
+    """OCR one page using a unique temporary image; never terminates the host app."""
     cmd = tesseract_cmd or _find_tesseract()
+    temp_path = None
     try:
-        result = subprocess.run(
-            [cmd, str(tmp_png), "stdout", "--psm", "6"],
-            capture_output=True, text=True,
-        )
-    except FileNotFoundError:
-        sys.exit(f"'{cmd}' could not be run. Check the path is correct and try again.")
-    if result.returncode != 0:
-        sys.exit(f"tesseract failed: {result.stderr}")
-    return result.stdout
+        with tempfile.NamedTemporaryFile(prefix="cal_cert_", suffix=".png", delete=False) as tmp:
+            temp_path = Path(tmp.name)
+        page.to_image(resolution=300 if psm == 3 else 600).save(str(temp_path))
+        try:
+            result = subprocess.run(
+                [cmd, str(temp_path), "stdout", "--psm", str(psm)],
+                capture_output=True, text=True, timeout=90, check=False,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(f"Tesseract executable '{cmd}' could not be started.") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Tesseract OCR timed out after 90 seconds.") from exc
+        if result.returncode != 0:
+            detail = (result.stderr or "").strip()
+            raise RuntimeError(f"Tesseract failed (exit {result.returncode}): {detail or 'no error details'}")
+        return result.stdout
+    finally:
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Could not remove temporary OCR image: %s", temp_path)
 
 
 def _clean_number(raw: str) -> float:
@@ -184,9 +251,10 @@ def _parse_measurement_line(text: str, known_nominal: float = None) -> tuple:
                 continue
             mu_num = float(mu_num_match.group())
             mu_prefix = None
-            # No warning here: for these resistors, MU is always reported
-            # as uOhm/Ohm - a mangled OCR prefix doesn't change that, so
-            # there's nothing worth flagging for manual verification.
+            warnings.append(
+                "The MU unit/prefix was not fully recognized by OCR. The numeric MU "
+                "was interpreted as µΩ/Ω for preview only; verify it against the PDF before import."
+            )
 
         # --- resolve the measured value's scale ---
         if known_nominal is not None:
@@ -225,15 +293,179 @@ def _parse_measurement_line(text: str, known_nominal: float = None) -> tuple:
         # trusted verbatim ---
         mu_relative = mu_num * UNIT_MULTIPLIERS.get(mu_prefix, 1e-6)
         if not (1e-9 < mu_relative < 1e-3):
-            # For these resistors, MU is always reported as uOhm/Ohm - a
-            # garbled OCR prefix producing an implausible value just means
-            # the prefix was misread, not that the unit itself is in doubt.
-            # No warning: this assumption is safe to make silently.
+            # Do not silently accept an implausible uncertainty unit. Keep the
+            # historical µΩ/Ω assumption for compatibility, but make it explicit.
+            warnings.append(
+                "The extracted MU magnitude/unit was implausible. It was interpreted "
+                "as µΩ/Ω for preview only; verify the uncertainty against the PDF."
+            )
             mu_relative = mu_num * 1e-6
 
         return measured_value, mu_relative, warnings
 
     return None, None, []
+
+
+
+# ---------------------------------------------------------------- Multi-point certificate extraction
+
+def _number_without_group_spaces(raw: str) -> float:
+    """Convert OCR grouped numbers such as '10.000 083 883' to a float."""
+    cleaned = re.sub(r"(?<=\d)\s+(?=\d{3}(?:\s|$))", "", raw.strip())
+    cleaned = re.sub(r"\s+", "", cleaned)
+    return float(cleaned)
+
+
+def _normalise_frequency(value: str) -> str:
+    s = re.sub(r"\s+", "", value).lower()
+    s = s.replace("khz", "khz").replace("mhz", "mhz")
+    if s.endswith("khz"):
+        number = s[:-3]
+        return f"{number} kHz"
+    if s.endswith("mhz"):
+        number = s[:-3]
+        return f"{number} MHz"
+    return s
+
+
+def extract_multi_point_measurements(
+    pdf_path: str,
+    category: str,
+    test_points: list,
+    tesseract_cmd: str = None,
+) -> dict:
+    """Extract known multi-point Keysight/Fluke certificate layouts.
+
+    Supported layouts validated against supplied examples:
+      * Fluke 732A/C DCV report: nominal output, measured voltage, uncertainty (nV)
+      * Keysight AC divider report: frequency, ratio, uncertainty (ppm)
+
+    The function returns readings keyed to configured database test-point IDs.
+    It never returns a partial result as a complete import.
+    """
+    page_texts = []
+    diagnostics = []
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            for page_number, page in enumerate(pdf.pages, start=1):
+                text = page.extract_text() or ""
+                # Scanned measurement pages have no text layer. OCR with a layout
+                # mode that tends to preserve table rows/columns.
+                if not text.strip():
+                    try:
+                        if category == "ac_divider":
+                            # The validated ET divider report places its six-row
+                            # ratio table in the lower-middle of the scanned page.
+                            # Cropping improves row ordering; full-page OCR tends
+                            # to read each column independently on this layout.
+                            crop = page.crop((35, 245, page.width - 35, min(page.height, 555)))
+                            text = _ocr_page(crop, tesseract_cmd, psm=6)
+                        else:
+                            text = _ocr_page(page, tesseract_cmd, psm=3)
+                    except RuntimeError as exc:
+                        diagnostics.append(f"Page {page_number} OCR failed: {exc}")
+                if text.strip():
+                    page_texts.append((page_number, text))
+    except Exception as exc:
+        return {"ok": False, "readings": [], "warnings": [f"Could not read PDF: {exc}"]}
+
+    all_text = "\n".join(text for _, text in page_texts)
+    extracted = {}
+
+    if category == "dcv_reference":
+        # Example rows: '10 10.000 083 883 35' and
+        # '1 0.999 982 438 24.4'. Preserve the grouped fractional digits.
+        row_re = re.compile(
+            r"^\s*(?:(10|1)\s+)?((?:\d+\.\d+|\.\d+)(?:\s+\d{3}){1,3})\s+([\d]+(?:\.\d+)?)\s*$"
+        )
+        for line in all_text.splitlines():
+            line = line.replace("|", " ").strip()
+            match = row_re.match(line)
+            if not match:
+                continue
+            try:
+                measured = _number_without_group_spaces(match.group(2))
+                uncertainty_nv = float(match.group(3))
+            except ValueError:
+                continue
+            nominal = float(match.group(1)) if match.group(1) else (10.0 if measured > 5.0 else 1.0)
+            if not (8.0 <= measured <= 12.0 or 0.5 <= measured <= 1.5):
+                continue
+            key = "10v" if nominal == 10 else "1v"
+            if key in extracted:
+                diagnostics.append(f"Duplicate {nominal:g} V output row found; refusing ambiguous extraction.")
+                continue
+            extracted[key] = {"measured_value": measured, "uncertainty": uncertainty_nv}
+
+        expected_keys = {}
+        for tp in test_points:
+            name = str(tp.get("point_name", tp.get("name", ""))).lower().replace(" ", "")
+            nominal = tp.get("nominal_value")
+            if "10v" in name or (nominal is not None and abs(float(nominal) - 10.0) < 1e-9):
+                expected_keys[tp.get("id")] = "10v"
+            elif "1v" in name or (nominal is not None and abs(float(nominal) - 1.0) < 1e-9):
+                expected_keys[tp.get("id")] = "1v"
+
+    elif category == "ac_divider":
+        # Row-oriented OCR is important here: each frequency, ratio and ppm
+        # uncertainty must come from the same line to avoid column-shift errors.
+        row_re = re.compile(
+            r"^\s*(1\s*MHz|500\s*kHz|300\s*kHz|100\s*kHz|20\s*kHz|1\s*kHz)\s+"
+            r"([\d]+(?:\.\d+)?)\s+([\d]+(?:\.\d*)?)\s*ppm\b",
+            re.I,
+        )
+        for line in all_text.splitlines():
+            match = row_re.match(line.strip())
+            if not match:
+                continue
+            freq = _normalise_frequency(match.group(1))
+            try:
+                measured = float(match.group(2))
+                uncertainty_ppm = float(match.group(3).rstrip("."))
+            except ValueError:
+                continue
+            if freq in extracted:
+                diagnostics.append(f"Duplicate {freq} ratio row found; refusing ambiguous extraction.")
+                continue
+            extracted[freq] = {"measured_value": measured, "uncertainty": uncertainty_ppm}
+
+        expected_keys = {
+            tp.get("id"): _normalise_frequency(str(tp.get("point_name", tp.get("name", "")))
+                                                .replace(" ", ""))
+            for tp in test_points
+        }
+    else:
+        return {
+            "ok": False, "readings": [],
+            "warnings": [f"Automatic multi-point extraction is not yet supported for category '{category}'."],
+        }
+
+    readings = []
+    missing = []
+    for tp in test_points:
+        tp_id = tp.get("id")
+        key = expected_keys.get(tp_id)
+        value = extracted.get(key)
+        if value is None:
+            missing.append(str(tp.get("point_name", tp.get("name", tp_id))))
+            continue
+        readings.append({
+            "test_point_id": tp_id,
+            "measured_value": value["measured_value"],
+            "uncertainty": value["uncertainty"],
+        })
+
+    if missing:
+        diagnostics.append("Could not confidently extract configured point(s): " + ", ".join(missing))
+    if not test_points:
+        diagnostics.append("No configured test points were supplied for matching.")
+    ok = bool(test_points) and not missing and len(readings) == len(test_points)
+    warnings = [
+        "OCR-extracted values must be checked against the original certificate before saving."
+    ]
+    warnings.extend(diagnostics)
+    return {"ok": ok, "readings": readings, "warnings": warnings,
+            "uncertainty_unit": {"dcv_reference": "nV", "ac_divider": "ppm"}.get(category)}
 
 
 # ---------------------------------------------------------------- Workbook side

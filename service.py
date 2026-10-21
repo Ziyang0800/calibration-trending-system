@@ -17,7 +17,7 @@ import report_pdf
 import export_excel
 import store
 import winfile
-from cal_cert_importer import extract_serial_and_date, extract_measurement
+from cal_cert_importer import extract_serial_and_date, extract_measurement, extract_multi_point_measurements
 
 
 def to_json_safe(obj):
@@ -432,75 +432,239 @@ class CalibrationService:
         return to_json_safe({"ok": True, "path": save_path})
 
     def import_certificate_file(self):
-        """Native Windows Open dialog to select and parse a PDF certificate."""
-        pdf_path = winfile.open_file("Select Calibration Certificate PDF", filt="PDF files (*.pdf)\0*.pdf\0All files\0*.*\0")
+        """Preview a certificate; scalar resistor import is parsed, multi-point assets are verified point-by-point."""
+        pdf_path = winfile.open_file(
+            "Select Calibration Certificate PDF",
+            filt="PDF files (*.pdf)\0*.pdf\0All files\0*.*\0",
+        )
         if not pdf_path:
             return to_json_safe({"ok": False, "cancelled": True})
 
         try:
             id_fields = extract_serial_and_date(pdf_path)
-            conn = self.get_conn()
             serial = id_fields.get("serial")
-            asset = None
-            if serial:
-                row = conn.execute("SELECT id, serial, model, asset_number, nominal_ohms, category, unit FROM assets WHERE serial = ?", (serial,)).fetchone()
-                if row:
-                    asset = {"id": row[0], "serial": row[1], "model": row[2], "asset_number": row[3], "nominal_ohms": row[4], "category": row[5], "unit": row[6]}
+            cal_date = id_fields.get("cal_date")
+            if not serial:
+                return to_json_safe({"ok": False, "error": "Could not identify the Serial Number on the first two PDF pages. Nothing was imported."})
+            if not cal_date:
+                return to_json_safe({"ok": False, "error": "Could not identify a valid Date of Calibration on the first two PDF pages. Nothing was imported."})
 
-            known_nom = asset["nominal_ohms"] if asset else None
-            meas = extract_measurement(pdf_path, known_nominal=known_nom)
-            conn.close()
+            conn = self.get_conn()
+            try:
+                row = conn.execute(
+                    "SELECT id, serial, model, asset_number, nominal_ohms, category, unit "
+                    "FROM assets WHERE serial = ?", (serial,)
+                ).fetchone()
+                if not row:
+                    return to_json_safe({
+                        "ok": False,
+                        "error": f"Serial {serial} is not registered in the calibration database. Register/match the asset before importing.",
+                    })
+                asset = {
+                    "id": row[0], "serial": row[1], "model": row[2],
+                    "asset_number": row[3], "nominal_ohms": row[4],
+                    "category": row[5] or "standard_resistor", "unit": row[6] or "Ω",
+                }
+                duplicate = conn.execute(
+                    "SELECT id FROM calibrations WHERE asset_id = ? AND cal_date = ?",
+                    (asset["id"], cal_date.date().isoformat()),
+                ).fetchone()
+                if duplicate:
+                    return to_json_safe({
+                        "ok": False,
+                        "error": f"A calibration for serial {serial} already exists on {cal_date.date().isoformat()}. Existing data was not changed.",
+                    })
 
-            return to_json_safe({
-                "ok": True,
-                "pdf_path": pdf_path,
-                "serial": serial or "",
-                "cal_date": id_fields["cal_date"].date().isoformat() if id_fields.get("cal_date") else "",
-                "measured_value": meas.get("measured_value"),
-                "mu_relative": meas.get("mu_relative"),
-                "warnings": meas.get("warnings", []),
-                "asset": asset,
-            })
+                test_points = conn.execute(
+                    "SELECT id, point_name, group_name, nominal_value, unit, display_order "
+                    "FROM test_points WHERE asset_id = ? ORDER BY display_order, id",
+                    (asset["id"],),
+                ).fetchall()
+                category = asset["category"]
+                if category == "standard_resistor" and not test_points:
+                    meas = extract_measurement(pdf_path, known_nominal=asset["nominal_ohms"])
+                    if meas.get("measured_value") is None or meas.get("mu_relative") is None:
+                        return to_json_safe({
+                            "ok": False,
+                            "error": "Could not safely extract the resistor MEASURED VALUE and MU. " + " ".join(meas.get("warnings", [])),
+                        })
+                    return to_json_safe({
+                        "ok": True, "pdf_path": pdf_path, "serial": serial,
+                        "cal_date": cal_date.date().isoformat(), "cert_number": id_fields.get("cert_number"), "measured_value": meas["measured_value"],
+                        "mu_relative": meas["mu_relative"], "warnings": meas.get("warnings", []),
+                        "asset": asset, "manual_readings_required": False,
+                    })
+
+                if category not in ("ac_divider", "waveform_generator", "dcv_reference"):
+                    return to_json_safe({"ok": False, "error": f"Certificate import is not configured for asset category '{category}'. Nothing was imported."})
+                if not test_points:
+                    return to_json_safe({"ok": False, "error": f"Asset {serial} is categorized as {category} but has no configured test points. Set up its point matrix before importing."})
+
+                uncertainty_unit = {"ac_divider": "ppm", "dcv_reference": "nV", "waveform_generator": None}[category]
+                configured_points = [{
+                    "id": tp[0], "point_name": tp[1], "group_name": tp[2],
+                    "nominal_value": tp[3], "unit": tp[4], "display_order": tp[5],
+                } for tp in test_points]
+
+                extracted = extract_multi_point_measurements(pdf_path, category, configured_points)
+                extracted_by_id = {
+                    int(r["test_point_id"]): r for r in extracted.get("readings", [])
+                }
+                points = []
+                for point in configured_points:
+                    point_id = int(point["id"])
+                    reading = extracted_by_id.get(point_id, {})
+                    points.append({
+                        **point,
+                        "name": point["point_name"],
+                        "uncertainty_unit": uncertainty_unit,
+                        # UI can prefill these fields, but operator confirmation
+                        # remains mandatory because OCR results are not authoritative.
+                        "measured_value": reading.get("measured_value"),
+                        "uncertainty": reading.get("uncertainty"),
+                        "extraction_status": "extracted" if reading else "manual_required",
+                    })
+
+                warnings = list(extracted.get("warnings", []))
+                if not extracted.get("ok"):
+                    warnings.append(
+                        "Some point readings could not be confidently extracted. "
+                        "Enter/verify every configured point against the PDF before saving."
+                    )
+                return to_json_safe({
+                    "ok": True, "pdf_path": pdf_path, "serial": serial,
+                    "cal_date": cal_date.date().isoformat(),
+                    "cert_number": id_fields.get("cert_number"),
+                    "warnings": warnings,
+                    "asset": asset, "manual_readings_required": True,
+                    "auto_extraction_complete": bool(extracted.get("ok")),
+                    "extracted_readings": extracted.get("readings", []),
+                    "test_points": points, "uncertainty_unit": uncertainty_unit,
+                })
+            finally:
+                conn.close()
         except Exception as e:
-            return to_json_safe({"ok": False, "error": str(e)})
+            return to_json_safe({"ok": False, "error": f"Certificate preview failed safely: {e}"})
 
     def commit_imported_certificate(self, data):
-        """Commits verified certificate reading directly to database."""
-        conn = self.get_conn()
-        asset_id = int(data["asset_id"])
-        cal_date = data["cal_date"]
-        measured_value = float(data["measured_value"])
-        mu_relative = float(data.get("mu_relative", 0.0))
-        cert_number = data.get("cert_number") or None
-        cert_pdf_path = data.get("pdf_path") or None
+        """Validate and atomically commit a verified scalar or multi-point certificate."""
+        import math
+        import sqlite3
 
-        cal_id = db.insert_calibration(
-            conn, asset_id, cal_date=cal_date, measured_value=measured_value,
-            mu_relative=mu_relative, source="pdf_import", cert_number=cert_number,
-            cert_pdf_path=cert_pdf_path
-        )
-        conn.commit()
-        conn.close()
-        return to_json_safe({"ok": True, "calibration_id": cal_id})
+        conn = self.get_conn()
+        try:
+            asset_id = int(data["asset_id"])
+            cal_date = date.fromisoformat(str(data["cal_date"])[:10]).isoformat()
+            asset = conn.execute(
+                "SELECT id, serial, category FROM assets WHERE id = ?", (asset_id,)
+            ).fetchone()
+            if not asset:
+                return to_json_safe({"ok": False, "error": "The selected asset no longer exists."})
+            category = asset[2] or "standard_resistor"
+            cert_number = data.get("cert_number") or None
+            cert_pdf_path = data.get("pdf_path") or None
+
+            existing = conn.execute(
+                "SELECT id FROM calibrations WHERE asset_id = ? AND cal_date = ?",
+                (asset_id, cal_date),
+            ).fetchone()
+            if existing:
+                return to_json_safe({"ok": False, "duplicate": True, "error": f"A calibration already exists for {asset[1]} on {cal_date}. Existing data was not changed."})
+
+            point_rows = conn.execute(
+                "SELECT id, point_name, unit FROM test_points WHERE asset_id = ? ORDER BY display_order, id",
+                (asset_id,),
+            ).fetchall()
+            if category in ("ac_divider", "waveform_generator", "dcv_reference") and not point_rows:
+                return to_json_safe({"ok": False, "error": "This multi-point category has no configured test points. Import is blocked to prevent a misleading scalar-only calibration."})
+            if point_rows and category in ("ac_divider", "waveform_generator", "dcv_reference"):
+                submitted = data.get("readings")
+                if not isinstance(submitted, list) or not submitted:
+                    return to_json_safe({"ok": False, "error": "Point readings are required for this multi-point asset."})
+                expected = {int(r[0]): r for r in point_rows}
+                by_id = {}
+                for item in submitted:
+                    try:
+                        point_id = int(item["test_point_id"])
+                        value = float(item["measured_value"])
+                    except (KeyError, TypeError, ValueError):
+                        return to_json_safe({"ok": False, "error": "Each point requires a valid numeric measured value."})
+                    if point_id not in expected or point_id in by_id or not math.isfinite(value):
+                        return to_json_safe({"ok": False, "error": "Point list contains an unknown/duplicate point or a non-finite reading."})
+                    uncertainty = item.get("uncertainty")
+                    if category in ("ac_divider", "dcv_reference"):
+                        try:
+                            uncertainty = float(uncertainty)
+                        except (TypeError, ValueError):
+                            return to_json_safe({"ok": False, "error": f"Uncertainty is required for every {category} test point."})
+                        if not math.isfinite(uncertainty) or uncertainty < 0:
+                            return to_json_safe({"ok": False, "error": "Uncertainty must be a finite non-negative number."})
+                    else:
+                        uncertainty = None
+                    by_id[point_id] = {"measured_value": value, "uncertainty": uncertainty}
+                if set(by_id) != set(expected):
+                    missing = [expected[pid][1] for pid in expected.keys() - by_id.keys()]
+                    return to_json_safe({"ok": False, "error": "Missing test-point reading(s): " + ", ".join(missing)})
+                # Legacy summary columns remain required by the schema. For multi-point
+                # assets they mirror the first configured point; per-point values and
+                # uncertainty remain authoritative in calibration_readings.
+                first_id = int(point_rows[0][0])
+                measured_value = by_id[first_id]["measured_value"]
+                mu_relative = 0.0  # no single global MU exists for these multi-point categories
+            else:
+                try:
+                    measured_value = float(data["measured_value"])
+                    mu_relative = float(data["mu_relative"])
+                except (KeyError, TypeError, ValueError):
+                    return to_json_safe({"ok": False, "error": "Measured value and relative uncertainty are required."})
+                if not math.isfinite(measured_value) or not math.isfinite(mu_relative) or mu_relative <= 0:
+                    return to_json_safe({"ok": False, "error": "Measured value must be finite and relative uncertainty must be greater than zero."})
+                by_id = {}
+
+            try:
+                with conn:
+                    cur = conn.execute(
+                        "INSERT INTO calibrations (asset_id, cert_number, cal_date, measured_value, mu_relative, source, cert_pdf_path) "
+                        "VALUES (?, ?, ?, ?, ?, 'pdf_import', ?)",
+                        (asset_id, cert_number, cal_date, measured_value, mu_relative, cert_pdf_path),
+                    )
+                    cal_id = cur.lastrowid
+                    for point_id, values in by_id.items():
+                        conn.execute(
+                            "INSERT INTO calibration_readings (calibration_id, test_point_id, measured_value, uncertainty) "
+                            "VALUES (?, ?, ?, ?)",
+                            (cal_id, point_id, values["measured_value"], values["uncertainty"]),
+                        )
+            except sqlite3.IntegrityError as exc:
+                return to_json_safe({"ok": False, "duplicate": True, "error": f"Import was not committed because of a database constraint: {exc}"})
+            return to_json_safe({"ok": True, "calibration_id": cal_id, "point_count": len(by_id)})
+        except (KeyError, TypeError, ValueError) as exc:
+            return to_json_safe({"ok": False, "error": f"Invalid import data: {exc}"})
+        finally:
+            conn.close()
 
     def save_pdf_report(self, asset_ids=None):
         """Automated report export with zero manual metadata fields required."""
         conn = self.get_conn()
-        if not asset_ids:
-            asset_ids = [r[0] for r in conn.execute("SELECT id FROM assets ORDER BY category, source_sheet, serial")]
+        try:
+            if asset_ids is None:
+                asset_ids = [r[0] for r in conn.execute("SELECT id FROM assets ORDER BY category, source_sheet, serial")]
+            elif not asset_ids:
+                return to_json_safe({"ok": False, "error": "No assets were selected for the report."})
 
-        default_name = f"calibration_report_{datetime.now():%Y%m%d_%H%M%S}.pdf"
-        dest_folder = str(Path.home() / "Documents" / "Calibration Reports")
-        Path(dest_folder).mkdir(parents=True, exist_ok=True)
+            default_name = f"calibration_report_{datetime.now():%Y%m%d_%H%M%S}.pdf"
+            dest_folder = str(Path.home() / "Documents" / "Calibration Reports")
+            Path(dest_folder).mkdir(parents=True, exist_ok=True)
 
-        save_path = winfile.save_file("Save Calibration Audit Report", dest_folder, default_name, filt="PDF files (*.pdf)\0*.pdf\0", ext="pdf")
-        if not save_path:
+            save_path = winfile.save_file("Save Calibration Audit Report", dest_folder, default_name, filt="PDF files (*.pdf)\0*.pdf\0", ext="pdf")
+            if not save_path:
+                return to_json_safe({"ok": False, "cancelled": True})
+            report_pdf.generate_report(conn, asset_ids, save_path)
+            return to_json_safe({"ok": True, "path": save_path})
+        except Exception as exc:
+            return to_json_safe({"ok": False, "error": f"Report generation failed: {exc}"})
+        finally:
             conn.close()
-            return to_json_safe({"ok": False, "cancelled": True})
-
-        report_pdf.generate_report(conn, asset_ids, save_path)
-        conn.close()
-        return to_json_safe({"ok": True, "path": save_path})
 
     def export_excel(self, asset_id: int):
         conn = self.get_conn()
