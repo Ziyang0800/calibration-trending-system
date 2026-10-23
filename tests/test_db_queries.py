@@ -62,3 +62,32 @@ def test_multipoint_matrix_drift_with_baseline(temp_db):
     # (100.0070 - 100.0050) / 100.0 * 1e6 = +20.00 ppm
     assert tp2["drift_ppm"] == pytest.approx(20.0, abs=0.01)
     assert tp2["drift_display"] == "+20.00 ppm"
+
+
+def test_multi_point_asset_is_not_marked_in_trend_with_only_two_cals(temp_db):
+    from queries import list_assets
+    aid = upsert_asset(temp_db, "SN_STATUS", "ET 100mV", "PN030001", 10.0, category="ac_divider", unit="Ratio")
+    tp = upsert_test_point(temp_db, aid, "1 kHz", "Ratio", 10.0, "Ratio", 1)
+    for day, value in (("2024-01-01", 10.0001), ("2025-01-01", 10.0002)):
+        cid = insert_calibration(temp_db, aid, day, value, 1e-6, "test")
+        insert_calibration_reading(temp_db, cid, tp, value, uncertainty=12.0)
+    item = next(a for a in list_assets(temp_db) if a["id"] == aid)
+    assert item["status"] == "insufficient_data"
+
+
+def test_missing_test_point_reading_does_not_fall_back_to_summary_value(temp_db):
+    aid = upsert_asset(temp_db, "SN_NO_FALLBACK", "Fluke 732A", "PN-DCV2", 10.0, category="dcv_reference", unit="V")
+    tp_10v = upsert_test_point(temp_db, aid, "10V Output", "DC Voltage", 10.0, "V", 1)
+    tp_1v = upsert_test_point(temp_db, aid, "1V Output", "DC Voltage", 1.0, "V", 2)
+    cid = insert_calibration(temp_db, aid, "2025-01-01", 10.0000001, 1e-7, "test")
+    insert_calibration_reading(temp_db, cid, tp_10v, 10.0000001, uncertainty=2.0)
+
+    detail = get_asset_detail(temp_db, aid, selected_point_id=tp_1v)
+    assert detail["calibrations"] == []
+    assert detail["trend"] is None
+
+
+def test_non_duplicate_integrity_error_is_not_misreported_as_duplicate(temp_db):
+    import sqlite3
+    with pytest.raises(sqlite3.IntegrityError):
+        insert_calibration(temp_db, 999999, "2025-01-01", 1.0, 1e-6, "test")

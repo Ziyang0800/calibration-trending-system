@@ -66,14 +66,15 @@ def _setup_logging():
 # SI prefixes as they're likely to appear on these certs. Case matters a lot
 # here (m = milli = 1e-3, M = mega = 1e6 - a 1e9 difference), which is
 # exactly the kind of OCR mistake this script must never trust blindly.
+# Support both micro representations: \u00b5 (MICRO SIGN) and \u03bc (GREEK SMALL LETTER MU)
 UNIT_MULTIPLIERS = {
-    "p": 1e-12, "n": 1e-9, "u": 1e-6, "\u00b5": 1e-6, "m": 1e-3,
+    "p": 1e-12, "n": 1e-9, "u": 1e-6, "\u00b5": 1e-6, "\u03bc": 1e-6, "m": 1e-3,
     "": 1.0, "k": 1e3, "K": 1e3, "M": 1e6, "G": 1e9,
 }
 
 # Matches "<number, may have internal spaces/dot> <optional SI prefix> <Ohm-like symbol>"
 # e.g. "10.000 002 kQ" -> ("10.000 002", "k"); ".100 000 761 Q" -> (".100 000 761", "")
-_VALUE_UNIT_RE = re.compile(r"([\d.][\d.\s]*)\s*([pnu\u00b5mkKMG]?)\s*[\u03a9QO]")
+_VALUE_UNIT_RE = re.compile(r"([\d.][\d.\s]*)\s*([pnu\u00b5\u03bcmkKMG]?)\s*([\u03a9QO\u03bc\u00b5]|ohm)?", re.I)
 
 
 # ---------------------------------------------------------------- PDF parsing
@@ -141,20 +142,36 @@ def extract_measurement(pdf_path: str, known_nominal: float = None, tesseract_cm
     """Extract the legacy resistor result only; other categories need point-level data."""
     diagnostics = []
     with pdfplumber.open(pdf_path) as pdf:
-        for page_number, page in enumerate(pdf.pages, start=1):
+        total_pages = len(pdf.pages)
+        if total_pages < 3:
+            return {
+                "measured_value": None,
+                "mu_relative": None,
+                "warnings": [f"Warning: PDF has only {total_pages} page(s). Standard resistor calibration reports require page 3."]
+            }
+
+        # Resistor measurements are permitted on page 3 only.
+        for page_idx in (2,):
+            page_number = page_idx + 1
+            page = pdf.pages[page_idx]
+
             text = page.extract_text() or ""
             if not text.strip():
                 try:
                     text = _ocr_page(page, tesseract_cmd)
                 except RuntimeError as exc:
                     raise RuntimeError(f"Could not OCR PDF page {page_number}: {exc}") from exc
-            if "MEASURED VALUE" in text.upper():
+
+            text_upper = text.upper()
+            # Match either "MEASURED VALUE" or "MEASURED"
+            if "MEASURED" in text_upper:
                 measured_value, mu_relative, warnings = _parse_measurement_line(text, known_nominal)
                 if measured_value is not None and mu_relative is not None:
                     return {"measured_value": measured_value, "mu_relative": mu_relative, "warnings": warnings}
-                diagnostics.append(f"Page {page_number} contains 'MEASURED VALUE' but the resistor value/MU row could not be parsed.")
+                diagnostics.append(f"Page {page_number} contains 'MEASURED' table header but the resistor value/MU row could not be parsed.")
             elif text.strip():
-                diagnostics.append(f"Page {page_number}: no 'MEASURED VALUE' table header found.")
+                diagnostics.append(f"Page {page_number}: no 'MEASURED' table header found.")
+
     if not diagnostics:
         diagnostics.append("No readable text or measurement table was found in the PDF.")
     return {"measured_value": None, "mu_relative": None, "warnings": diagnostics}
@@ -211,103 +228,172 @@ def _ocr_page(page, tesseract_cmd: str = None, psm: int = 6) -> str:
 
 
 def _clean_number(raw: str) -> float:
-    s = re.sub(r"[^\d.]", "", raw)
-    if s.count(".") > 1:  # OCR occasionally duplicates a stray dot
+    if not raw:
+        return 0.0
+    # Strip everything except digits and decimal point
+    s = re.sub(r"[^\d.]", "", str(raw))
+    if s.count(".") > 1:
         first = s.index(".")
         s = s[: first + 1] + s[first + 1:].replace(".", "")
-    s = s.rstrip(".")  # trailing stray dot only - a leading dot is a real decimal point
-    return float(s) if s and s != "." else 0.0
+    s = s.rstrip(".")
+    try:
+        return float(s) if s and s != "." else 0.0
+    except ValueError:
+        return 0.0
 
 
 def _parse_measurement_line(text: str, known_nominal: float = None) -> tuple:
     """Returns (measured_value_ohms, mu_relative, warnings)."""
-    candidates = [l for l in text.splitlines() if len(re.findall(r"[\u03a9QO]", l)) >= 2]
+    lines = text.splitlines()
 
-    for line in candidates:
-        found = list(_VALUE_UNIT_RE.finditer(line))
-        if len(found) < 2:
+    for line in lines:
+        line_clean = line.strip()
+        if not line_clean:
             continue
+
+        # Look for the line containing the measurement data
+        # In Keysight certs, this line typically has 0.xxx, followed by symbols and MU (e.g. 0.61)
+        if not re.search(r"\d+\.\d+", line_clean):
+            continue
+
+        # Skip headers like "NOMINAL MEASURED MU" or dates
+        if "NOMINAL" in line_clean.upper() and "MEASURED" in line_clean.upper():
+            continue
+
+        # --- OCR Character Normalization ---
+        # Tesseract frequently misreads '1' near symbols as ']', ')', '}', '|', 'l', 'I'
+        # Example from log: "0.099 998 94] ©" -> "0.099 998 941 ©"
+        normalized = re.sub(r"(?<=\d)[\]\)\}\|lI](?=\s|[\u03a9QO©®@]|wQ|$)", "1", line_clean)
+
+        # Look for all decimal numbers on this normalized line
+        # Grabs: "0.099 998 941", "0.61", etc.
+        raw_matches = re.findall(r"(?:\d*\.\d+)(?:[ \t]*\d+)*", normalized)
+
+        cleaned_numbers = []
+        for m in raw_matches:
+            # Strip internal spaces
+            num_str = re.sub(r"[^\d.]", "", m)
+            if num_str and num_str != ".":
+                try:
+                    cleaned_numbers.append(float(num_str))
+                except ValueError:
+                    pass
+
+        # We need at least the measured value and MU
+        if not cleaned_numbers:
+            continue
+
+        # Decide which number is measured_value and which is MU
+        if len(cleaned_numbers) >= 3:
+            # [Nominal, Measured, MU]
+            meas_cand = cleaned_numbers[1]
+            mu_cand = cleaned_numbers[2]
+        elif len(cleaned_numbers) == 2:
+            # [Measured, MU] (Nominal was read as "AQ" so it had no dot)
+            meas_cand = cleaned_numbers[0]
+            mu_cand = cleaned_numbers[1]
+        else:
+            # Only 1 float matched - try to find MU in the tail of the line
+            meas_cand = cleaned_numbers[0]
+            mu_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:[w\u03bc\u00b5]Q/[Qq]|ppm)", normalized)
+            if mu_match:
+                mu_cand = float(mu_match.group(1))
+            else:
+                continue
+
+        # Scale check: verify against known nominal if available
+        if known_nominal is not None and known_nominal > 0:
+            if not (0.5 * known_nominal < meas_cand < 1.5 * known_nominal):
+                matched = False
+                for mult in (1e-3, 1e3, 1e6, 1.0):
+                    if 0.5 * known_nominal < meas_cand * mult < 1.5 * known_nominal:
+                        meas_cand = meas_cand * mult
+                        matched = True
+                        break
+                if not matched:
+                    continue
 
         warnings = []
-        nominal_raw = (found[0].group(1), found[0].group(2))
-        measured_raw = (found[1].group(1), found[1].group(2))
-        measured_num = _clean_number(measured_raw[0])
-        if measured_num == 0:
-            continue
-
-        if len(found) >= 3:
-            mu_raw = (found[2].group(1), found[2].group(2))
-            mu_num = _clean_number(mu_raw[0])
-            mu_prefix = mu_raw[1]
+        # Convert MU to relative ratio (0.61 µΩ/Ω -> 0.61 * 1e-6 = 6.1e-7)
+        if not re.search(r"(?:[w\u03bc\u00b5]Q/[Qq]|ppm)", normalized):
+            warnings.append("MU unit/prefix was not recognized; verify the assumed relative uncertainty against the certificate.")
+        if mu_cand > 0.001:
+            mu_relative = mu_cand * 1e-6
         else:
-            # MU's unit got mangled badly enough that the full value+prefix+symbol
-            # pattern didn't match at all (e.g. a stray OCR letter wedged in front
-            # of the prefix). Fall back to just grabbing the next number after the
-            # measured value's match and assume the near-universal uOhm/Ohm unit -
-            # the plausibility clamp below still guards against nonsense.
-            rest = line[found[1].end():]
-            mu_num_match = re.search(r"\d+\.\d+|\d+", rest)
-            if not mu_num_match:
-                continue
-            mu_num = float(mu_num_match.group())
-            mu_prefix = None
-            warnings.append(
-                "The MU unit/prefix was not fully recognized by OCR. The numeric MU "
-                "was interpreted as µΩ/Ω for preview only; verify it against the PDF before import."
-            )
+            mu_relative = mu_cand
 
-        # --- resolve the measured value's scale ---
-        if known_nominal is not None:
-            ocr_multiplier = UNIT_MULTIPLIERS.get(measured_raw[1], 1.0)
-            candidate = measured_num * ocr_multiplier
-            if 0.5 * known_nominal < candidate < 1.5 * known_nominal:
-                measured_value = candidate
-            else:
-                fixed = None
-                for prefix, mult in UNIT_MULTIPLIERS.items():
-                    trial = measured_num * mult
-                    if 0.5 * known_nominal < trial < 1.5 * known_nominal:
-                        fixed = (trial, prefix)
-                        break
-                if fixed is None:
-                    continue  # nothing plausible on this line - try the next candidate
-                measured_value, corrected_prefix = fixed
-                warnings.append(
-                    f"OCR read the measured-value unit prefix as '{measured_raw[1]}', which "
-                    f"didn't match the known nominal ({known_nominal} ohm). Assumed "
-                    f"'{corrected_prefix}' instead based on the known nominal - VERIFY "
-                    f"this against the certificate before confirming."
-                )
-        else:
-            measured_value = measured_num * UNIT_MULTIPLIERS.get(measured_raw[1], 1.0)
-            nominal_guess = _clean_number(nominal_raw[0]) * UNIT_MULTIPLIERS.get(nominal_raw[1], 1.0)
-            if nominal_guess > 0 and not (0.5 * nominal_guess < measured_value < 1.5 * nominal_guess):
-                continue
-            warnings.append(
-                "No known nominal was available to validate the unit prefix - double-check "
-                "the measured value's magnitude carefully."
-            )
-
-        # --- resolve MU: always a relative ratio (e.g. uOhm/Ohm), so its
-        # prefix must land in a plausible ppm-scale band rather than being
-        # trusted verbatim ---
-        mu_relative = mu_num * UNIT_MULTIPLIERS.get(mu_prefix, 1e-6)
-        if not (1e-9 < mu_relative < 1e-3):
-            # Do not silently accept an implausible uncertainty unit. Keep the
-            # historical µΩ/Ω assumption for compatibility, but make it explicit.
-            warnings.append(
-                "The extracted MU magnitude/unit was implausible. It was interpreted "
-                "as µΩ/Ω for preview only; verify the uncertainty against the PDF."
-            )
-            mu_relative = mu_num * 1e-6
-
-        return measured_value, mu_relative, warnings
+        return meas_cand, mu_relative, warnings
 
     return None, None, []
 
-
-
 # ---------------------------------------------------------------- Multi-point certificate extraction
+
+def _extract_33622a_measurements(pdf_path, test_points, tesseract_cmd=None):
+    """Map final-page CF Data and corrected dB columns by unique point names.
+
+    Omit missing/ambiguous rows so verification fields require manual entry.
+    """
+    warnings = ["Verify all 15 values against the final PDF page before saving. Values remain in dB."]
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            if not pdf.pages:
+                raise ValueError("PDF contains no pages")
+            page = pdf.pages[-1]
+            text = page.extract_text() or ""
+            if not text.strip():
+                text = _ocr_page(page, tesseract_cmd, psm=6)
+    except Exception as exc:
+        return {"ok": False, "readings": [], "warnings": warnings + [f"Final-page extraction failed: {exc}"]}
+
+    def key(name):
+        return re.sub(r"\s+", "", name).lower()
+
+    expected = {
+        key(f"cf {voltage} @ {freq}MHz (dB)")
+        for voltage, freqs in (("10mV", (4,)), ("100mV", (4, 8, 10)),
+                               ("1V", (4, 8, 10)), ("3V", (2, 4, 8, 10)))
+        for freq in freqs
+    } | {key(f"Flatness Error {freq}MHz (dB)") for freq in (2, 4, 8, 10)}
+    number = r"[+-]?(?:\d+\.\d+|\d+|\.\d+)"
+    cf_row = re.compile(
+        rf"\s*(10mV|100mV|1V|3V)\s*@\s*(2|4|8|10)\s*MHz\s+"
+        rf"({number})\s+({number})\s+({number})\s+({number})\s*", re.I)
+    error_row = re.compile(
+        rf"\s*(2|4|8|10)\s*MHz\s+{number}\s*%\s+({number})\s*dB\s+(?:PASS|FAIL)\s*", re.I)
+    candidates = {}
+    has_cf = bool(re.search(r"cf\s+Data", text, re.I))
+    has_error = bool(re.search(r"Error\s+corrected\s+to\s+dB", text, re.I))
+    for line in text.replace("\u2212", "-").splitlines():
+        # Narrow OCR correction for the supplied report's 10MHz label.
+        line = re.sub(r"\b1[Oo](?=\s*MHz\b)", "10", line)
+        cf = cf_row.fullmatch(line) if has_cf else None
+        error = error_row.fullmatch(line) if has_error else None
+        if cf:
+            name, value = f"cf {cf[1]} @ {cf[2]}MHz (dB)", float(cf[6])
+        elif error:
+            name, value = f"Flatness Error {error[1]}MHz (dB)", float(error[2])
+        else:
+            continue
+        candidates.setdefault(key(name), []).append(value)
+    configured = {}
+    for tp in test_points:
+        configured.setdefault(key(str(tp.get("point_name", tp.get("name", "")))), []).append(tp)
+    readings = []
+    ids = [tp.get("id") for tp in test_points]
+    for name, points in configured.items():
+        values = candidates.get(name, [])
+        if (name in expected and len(points) == 1 and len(values) == 1
+                and points[0].get("unit") == "dB" and points[0].get("id") is not None
+                and ids.count(points[0]["id"]) == 1):
+            readings.append({"test_point_id": points[0]["id"], "measured_value": values[0], "uncertainty": None})
+        else:
+            warnings.append(f"Manual entry required for {points[0].get('point_name', name)}: missing, ambiguous, or unsupported point/unit.")
+    complete = set(configured) == expected and len(test_points) == 15 and len(readings) == 15
+    if not complete:
+        warnings.append("Expected exactly 11 CF Data and 4 Error corrected values with unique configured names and IDs.")
+    return {"ok": complete, "readings": readings, "warnings": warnings,
+            "measurement_unit": "dB", "uncertainty_unit": None}
+
 
 def _number_without_group_spaces(raw: str) -> float:
     """Convert OCR grouped numbers such as '10.000 083 883' to a float."""
@@ -339,10 +425,14 @@ def extract_multi_point_measurements(
     Supported layouts validated against supplied examples:
       * Fluke 732A/C DCV report: nominal output, measured voltage, uncertainty (nV)
       * Keysight AC divider report: frequency, ratio, uncertainty (ppm)
+      * Keysight 33622A: final-page 11 CF Data and 4 corrected errors (dB)
 
     The function returns readings keyed to configured database test-point IDs.
     It never returns a partial result as a complete import.
     """
+    if category == "waveform_generator":
+        return _extract_33622a_measurements(pdf_path, test_points, tesseract_cmd)
+
     page_texts = []
     diagnostics = []
     try:

@@ -25,6 +25,8 @@ const state = {
 
 const api = () => window.pywebview.api;
 
+window.pendingMultiPointImport = null;
+
 // -----------------------------------------------------------------------------
 // Centralized Metrology Decimal & Uncertainty Formatter
 // -----------------------------------------------------------------------------
@@ -44,7 +46,8 @@ function formatMeasured(val, nominal, category, unit) {
   }
 
   // Standard Resistors by Decade
-  const nom = nominal !== undefined && nominal !== null ? Math.abs(parseFloat(nominal)) : Math.abs(num);
+  // Use the actual number magnitude (num) directly so units like "100 mΩ" don't parse as 100 Ω
+  const nom = Math.abs(num);
   if (nom < 0.5) return `${num.toFixed(9)} Ω`;       // 0.1 Ω -> 9 decimals
   if (nom < 5.0) return `${num.toFixed(8)} Ω`;       // 1 Ω   -> 8 decimals
   if (nom < 50.0) return `${num.toFixed(7)} Ω`;      // 10 Ω  -> 7 decimals
@@ -52,7 +55,7 @@ function formatMeasured(val, nominal, category, unit) {
   if (nom < 5000.0) return `${num.toFixed(5)} Ω`;    // 1 kΩ  -> 5 decimals
   if (nom < 50000.0) return `${num.toFixed(4)} Ω`;   // 10 kΩ -> 4 decimals
   if (nom < 500000.0) return `${num.toFixed(3)} Ω`;  // 100 kΩ -> 3 decimals
-  return `${Math.round(num).toLocaleString('en-US')} Ω`; // 1 MΩ to 1 GΩ -> 0 decimals (integer)
+  return `${Math.round(num).toLocaleString('en-US')} Ω`; // 1 MΩ to 1 GΩ -> 0 decimals
 }
 
 function formatBound(val, nominal, category, unit) {
@@ -1161,7 +1164,7 @@ function renderHTBasic() {
                 <td class="mono right">${r.nominal}</td>
                 <td class="mono" style="color:var(--primary-accent); font-weight:700;">${r.pn}</td>
                 <td class="mono">${r.serial}</td>
-                <td class="mono right">${formatMeasured(r.measured_value, r.nominal, 'standard_resistor', 'Ω')}</td>
+                <td class="mono right">${formatMeasured(r.measured_value, r.measured_value, 'standard_resistor', 'Ω')}</td>
                 <td class="mono">${r.cal_date}</td>
               </tr>
             `).join('')}
@@ -1326,9 +1329,13 @@ const app = {
     }
   },
 
-  async importCert() {
+async importCert() {
     const res = await api().import_certificate();
     if (res.ok) {
+      if (Array.isArray(res.test_points)) {
+        renderMultiPointImport(res);
+        return;
+      }
       const card = document.getElementById('genericModalCard');
       card.innerHTML = `
         <div class="panel-header">
@@ -1354,6 +1361,12 @@ const app = {
         </div>
       `;
       document.getElementById('genericModal').classList.add('open');
+    }
+    else if (!res.cancelled) {
+      this.showToast(
+        res.error || 'Certificate import failed. Check the application log.',
+        'error'
+      );
     }
   },
 
@@ -1420,9 +1433,88 @@ async function commitImport(res) {
     app.showToast('Calibration recorded successfully.', 'success');
     router.navigate('asset_detail', { asset_id: res.asset.id });
   } else {
-    app.showToast('Record collision: calibration already exists for this date.', 'warning');
+    app.showToast(
+      result.error || 'Calibration could not be saved.',
+      result.duplicate ? 'warning' : 'error'
+    );
+  }
+} // <-- Make sure this closing brace exists
+
+
+async function commitMultiPointImport() {
+  const res = window.pendingMultiPointImport;
+
+  if (!res || !Array.isArray(res.test_points) || !res.test_points.length) {
+    app.showToast('No multi-point certificate is awaiting verification.', 'error');
+    return;
+  }
+
+  const needsUncertainty = ['ac_divider', 'dcv_reference'].includes(res.asset.category);
+  const readings = [];
+
+  for (let i = 0; i < res.test_points.length; i++) {
+    const point = res.test_points[i];
+    const valueText = document.getElementById(`mp-value-${i}`)?.value;
+    const uncertaintyText = needsUncertainty
+      ? document.getElementById(`mp-uncertainty-${i}`)?.value
+      : null;
+    const verified = document.getElementById(`mp-verified-${i}`)?.checked;
+
+    if (!verified) {
+      app.showToast(`Please verify test point: ${point.name || point.point_name}`, 'warning');
+      return;
+    }
+
+    if (valueText === '' || !Number.isFinite(Number(valueText))) {
+      app.showToast(`Enter a valid measured value for ${point.name || point.point_name}.`, 'error');
+      return;
+    }
+
+    const reading = {
+      test_point_id: point.id,
+      measured_value: Number(valueText),
+      uncertainty: null
+    };
+
+    if (needsUncertainty) {
+      if (
+        uncertaintyText === '' ||
+        !Number.isFinite(Number(uncertaintyText)) ||
+        Number(uncertaintyText) < 0
+      ) {
+        app.showToast(`Enter a valid non-negative uncertainty for ${point.name || point.point_name}.`, 'error');
+        return;
+      }
+      reading.uncertainty = Number(uncertaintyText);
+    }
+
+    readings.push(reading);
+  }
+
+  const result = await api().commit_imported_certificate({
+    asset_id: res.asset.id,
+    cal_date: res.cal_date,
+    cert_number: res.cert_number,
+    pdf_path: res.pdf_path,
+    readings
+  });
+
+  if (result.ok) {
+    window.pendingMultiPointImport = null;
+    closeGenericModal();
+    app.showToast(
+      `Calibration recorded successfully (${result.point_count} test points).`,
+      'success'
+    );
+    router.navigate('asset_detail', { asset_id: res.asset.id });
+  } else {
+    app.showToast(
+      result.error || 'Calibration could not be saved.',
+      result.duplicate ? 'warning' : 'error'
+    );
   }
 }
+
 
 async function generateReportByScope() {
   const scope = document.getElementById('reportScopeSelect').value;
@@ -1439,6 +1531,119 @@ async function generateReportByScope() {
 
   const res = await api().save_report(assetIds);
   if (res.ok) app.showToast('Audit PDF report generated successfully.', 'success');
+}
+
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[ch]);
+}
+
+function renderMultiPointImport(res) {
+  const card = document.getElementById('genericModalCard');
+  const points = res.test_points || [];
+  const category = res.asset.category;
+  const needsUncertainty = ['ac_divider', 'dcv_reference'].includes(category);
+  const canSave = points.length > 0;
+
+  window.pendingMultiPointImport = res;
+
+  card.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title">Verify Multi-Point Certificate</div>
+      <button class="btn" onclick="closeGenericModal()">&times;</button>
+    </div>
+
+    <p style="color:var(--ink-muted)">
+      Standard: <strong>${escapeHtml(res.asset.model)}</strong>
+      (${escapeHtml(res.serial)})<br>
+      Calibration date: <strong>${escapeHtml(res.cal_date)}</strong><br>
+      Certificate: <strong>${escapeHtml(res.cert_number || 'Not detected')}</strong>
+    </p>
+
+    <p style="color:var(--warn)">
+      Review every reading against the certificate. Tick each verification
+      box only after checking that point. OCR results are suggestions, not
+      authoritative values.
+    </p>
+
+    ${res.warnings?.length ? `
+      <div style="margin-bottom:12px;color:var(--warn)">
+        ${res.warnings.map(w => `<div>⚠ ${escapeHtml(w)}</div>`).join('')}
+      </div>
+    ` : ''}
+
+    <div style="overflow-x:auto;max-height:420px;overflow-y:auto">
+      <table class="trace-table" style="width:100%">
+        <thead>
+          <tr>
+            <th>Test Point</th>
+            <th>Measured Value (${escapeHtml(points[0]?.unit || '')})</th>
+            ${needsUncertainty ? `<th>Uncertainty (${escapeHtml(res.uncertainty_unit || '')})</th>` : ''}
+            <th>Verified</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${points.map((p, i) => `
+            <tr>
+              <td>
+                <strong>${escapeHtml(p.name || p.point_name)}</strong>
+                <div style="color:var(--ink-muted);font-size:11px">
+                  ${escapeHtml(p.group_name || '')}
+                </div>
+                ${p.extraction_status !== 'extracted'
+                  ? '<div style="color:var(--warn);font-size:11px">Manual entry required</div>'
+                  : '<div style="font-size:11px">OCR extracted — verify</div>'}
+              </td>
+              <td>
+                <input
+                  id="mp-value-${i}"
+                  type="number"
+                  step="any"
+                  value="${p.measured_value ?? ''}"
+                  style="width:150px"
+                  aria-label="Measured value for ${escapeHtml(p.name || p.point_name)}"
+                >
+              </td>
+              ${needsUncertainty ? `
+                <td>
+                  <input
+                    id="mp-uncertainty-${i}"
+                    type="number"
+                    min="0"
+                    step="any"
+                    value="${p.uncertainty ?? ''}"
+                    style="width:110px"
+                    aria-label="Uncertainty for ${escapeHtml(p.name || p.point_name)}"
+                  >
+                </td>
+              ` : ''}
+              <td>
+                <input id="mp-verified-${i}" type="checkbox"
+                  aria-label="Verify ${escapeHtml(p.name || p.point_name)}">
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+      <button class="btn" onclick="closeGenericModal()">Cancel</button>
+      <button class="btn btn-primary"
+        ${canSave ? '' : 'disabled'}
+        onclick="commitMultiPointImport()">
+        Verify and Commit
+      </button>
+    </div>
+  `;
+
+  document.getElementById('genericModal').classList.add('open');
 }
 
 function openNoteModal(date, comment, attachPath, calId) {
@@ -1534,7 +1739,15 @@ function closeGenericModal() {
   document.getElementById('genericModal').classList.remove('open');
 }
 
+
+
 // Global Startup
-window.addEventListener('pywebviewready', () => {
+function startApp() {
   router.navigate('dashboard');
-});
+}
+
+if (window.pywebview) {
+  startApp();
+} else {
+  window.addEventListener('pywebviewready', startApp);
+}
