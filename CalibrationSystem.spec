@@ -1,3 +1,7 @@
+from pathlib import Path
+
+PROJECT_ROOT = Path(SPEC).resolve().parent
+
 # CalibrationSystem.spec
 #
 # Build with:  pyinstaller CalibrationSystem.spec
@@ -5,18 +9,19 @@
 #  building on Linux/Mac produces a Linux/Mac binary, not a .exe.)
 #
 # Produces dist/CalibrationSystem/CalibrationSystem.exe (a folder, not a
-# single file - see PHASE6_INSTRUCTIONS.md for why --onefile is deliberately
-# NOT used here).
+# single file, so bundled scientific libraries and UI assets remain inspectable).
 
 a = Analysis(
-    ['app.py'],
-    pathex=[],
+    [str(PROJECT_ROOT / 'app.py')],
+    pathex=[str(PROJECT_ROOT)],
     binaries=[],
     datas=[
-        ('templates', 'templates'),
-        ('static', 'static'),
-        ('schema.sql', '.'),
-        ('htbasic_templates', 'htbasic_templates'),
+        (str(PROJECT_ROOT / 'ui'), 'ui'),
+        (str(PROJECT_ROOT / 'templates'), 'templates'),  # retained for legacy report/template code
+        (str(PROJECT_ROOT / 'static'), 'static'),       # retained for legacy assets
+        (str(PROJECT_ROOT / 'schema.sql'), '.'),
+        (str(PROJECT_ROOT / 'VERSION'), '.'),
+        (str(PROJECT_ROOT / 'htbasic_templates'), 'htbasic_templates'),
     ],
     hiddenimports=[
         'openpyxl.cell._writer',  # openpyxl sometimes needs this spelled out for PyInstaller
@@ -37,7 +42,7 @@ exe = EXE(
     debug=False,
     strip=False,
     upx=False,
-    console=True,   # keep the console window - it shows the URL, DB path, and any errors
+    console=False,  # native windowed desktop shell; diagnostics go to %APPDATA%\CalibrationSystem\app.log
 )
 
 coll = COLLECT(

@@ -30,6 +30,12 @@ def compute_trend(dates: List[date], measured_values: List[float], nominal: floa
       - 95% Prediction Interval evaluated using Student's t critical factor (df = n - 2).
     """
     n_total = len(dates)
+    if len(measured_values) != n_total:
+        raise ValueError("measured_values must match dates length.")
+    if not n_total:
+        return [], None
+    if not all(math.isfinite(float(v)) for v in measured_values):
+        raise ValueError("Measurements must be finite.")
     if excluded is None:
         excluded = [False] * n_total
     if adjustments is None:
@@ -37,7 +43,7 @@ def compute_trend(dates: List[date], measured_values: List[float], nominal: floa
 
     if len(excluded) != n_total or len(adjustments) != n_total:
         raise ValueError("excluded and adjustments lists must match dates length.")
-    if list(dates) != sorted(dates):
+    if any(a >= b for a, b in zip(dates, dates[1:])):
         raise ValueError("dates must be strictly sorted ascending.")
 
     # Identify the latest adjustment/epoch boundary
@@ -129,8 +135,10 @@ def compute_trend(dates: List[date], measured_values: List[float], nominal: floa
         
         # Out-of-trend evaluation strictly belongs to the held-out point against the prediction interval
         out_of_trend = False
-        if is_held_out and margin_all[i] > 0:
-            out_of_trend = not (lower_all[i] <= y_all[i] <= upper_all[i])
+        if is_held_out and not excluded[i]:
+            # Cover floating-point roundoff, not measurement uncertainty.
+            tolerance = 32 * np.finfo(float).eps * max(abs(y_all[i]), abs(fitted_all[i]), np.finfo(float).tiny)
+            out_of_trend = not (lower_all[i] - tolerance <= y_all[i] <= upper_all[i] + tolerance)
 
         fit_role = "held_out" if is_held_out else (
             "excluded" if excluded[i] else ("prior_epoch" if not in_active_epoch else "included")

@@ -461,6 +461,7 @@ def extract_multi_point_measurements(
 
     all_text = "\n".join(text for _, text in page_texts)
     extracted = {}
+    ambiguous = set()
 
     if category == "dcv_reference":
         # Example rows: '10 10.000 083 883 35' and
@@ -484,6 +485,7 @@ def extract_multi_point_measurements(
             key = "10v" if nominal == 10 else "1v"
             if key in extracted:
                 diagnostics.append(f"Duplicate {nominal:g} V output row found; refusing ambiguous extraction.")
+                ambiguous.add(key)
                 continue
             extracted[key] = {"measured_value": measured, "uncertainty": uncertainty_nv}
 
@@ -516,6 +518,7 @@ def extract_multi_point_measurements(
                 continue
             if freq in extracted:
                 diagnostics.append(f"Duplicate {freq} ratio row found; refusing ambiguous extraction.")
+                ambiguous.add(freq)
                 continue
             extracted[freq] = {"measured_value": measured, "uncertainty": uncertainty_ppm}
 
@@ -535,7 +538,7 @@ def extract_multi_point_measurements(
     for tp in test_points:
         tp_id = tp.get("id")
         key = expected_keys.get(tp_id)
-        value = extracted.get(key)
+        value = None if key in ambiguous else extracted.get(key)
         if value is None:
             missing.append(str(tp.get("point_name", tp.get("name", tp_id))))
             continue

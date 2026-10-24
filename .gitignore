@@ -23,3 +23,24 @@ frontend/out/
 .vscode/
 .DS_Store
 Thumbs.db
+# Local calibration data, certificates and generated release output
+/calibration.db*
+/certs/
+/attachments/
+/build/
+/dist/
+/tmp/
+.pytest_cache/
+*.backup
+
+# Source repair rollback copies
+.repair-backups/
+
+# Generated MARS exports and frontend cache
+/equipment_result.json
+/equipment_result.txt
+/templates.zip
+*.tsbuildinfo
+
+# Obsolete, already-applied repair bundles
+/patches/

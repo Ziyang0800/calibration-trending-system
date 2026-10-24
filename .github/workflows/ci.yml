@@ -1,0 +1,46 @@
+name: Validate calibration system
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install Tesseract OCR
+        run: choco install tesseract --yes --no-progress
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Validate and build Windows application
+        shell: pwsh
+        run: ./tools/build_release.ps1 -Python python
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Audit frontend dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+      - uses: actions/upload-artifact@v4
+        with:
+          name: calibration-system-windows
+          path: dist/verified-*/CalibrationSystem/
+          if-no-files-found: error

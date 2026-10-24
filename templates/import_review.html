@@ -11,6 +11,7 @@
 </div>
 
 <form action="{{ url_for('import_confirm') }}" method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 <input type="hidden" name="row_count" value="{{ results|length }}">
 
 {% for r in results %}

@@ -76,10 +76,10 @@ function formatBound(val, nominal, category, unit) {
   return Math.round(num).toLocaleString('en-US');
 }
 
-function formatUncertainty(c, category) {
+function formatUncertainty(c, category, nominal) {
   if (category === 'dcv_reference') {
     if (c.uncertainty !== null && c.uncertainty !== undefined) return `${parseFloat(c.uncertainty).toFixed(1)} nV`;
-    if (c.mu_relative) return `${(c.mu_relative * 10.0 * 1e9).toFixed(1)} nV`;
+    if (c.mu_relative && Number(nominal) === 10) return `${(c.mu_relative * 10.0 * 1e9).toFixed(1)} nV`;
     return '—';
   }
   if (category === 'ac_divider') {
@@ -184,7 +184,7 @@ function renderDashboard() {
   if (state.filters.status !== 'all') activeFilterChips.push({ key: 'status', label: `Status: ${state.filters.status.replace(/_/g, ' ')}` });
   if (state.filters.category !== 'all') activeFilterChips.push({ key: 'category', label: `Category: ${state.filters.category.replace(/_/g, ' ')}` });
   if (state.filters.set !== 'all') activeFilterChips.push({ key: 'set', label: `Set: ${state.filters.set}` });
-  if (state.filters.query) activeFilterChips.push({ key: 'query', label: `Search: "${state.filters.query}"` });
+  if (state.filters.query) activeFilterChips.push({ key: 'query', label: `Search: "${escapeHtml(state.filters.query)}"` });
 
   root.innerHTML = `
     <!-- Top Action Banner if Out of Trend -->
@@ -225,15 +225,15 @@ function renderDashboard() {
     <!-- Category Strip & Filter Controls -->
     <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap;">
       <div style="display:flex; gap:6px; background:var(--track); padding:3px; border-radius:var(--radius-sm); border:1px solid var(--line);">
-        <button class="btn ${state.filters.category === 'all' ? 'btn-primary' : ''}" style="border:none;" onclick="filterByCategory('all')">All Standards (34)</button>
-        <button class="btn ${state.filters.category === 'standard_resistor' ? 'btn-primary' : ''}" style="border:none;" onclick="filterByCategory('standard_resistor')">Resistors (23)</button>
-        <button class="btn ${state.filters.category === 'dcv_reference' ? 'btn-primary' : ''}" style="border:none;" onclick="filterByCategory('dcv_reference')">DCV 732A (3)</button>
-        <button class="btn ${state.filters.category === 'ac_divider' ? 'btn-primary' : ''}" style="border:none;" onclick="filterByCategory('ac_divider')">AC Dividers (4)</button>
-        <button class="btn ${state.filters.category === 'waveform_generator' ? 'btn-primary' : ''}" style="border:none;" onclick="filterByCategory('waveform_generator')">33622A WFG (3)</button>
+        <button class="btn ${state.filters.category === 'all' ? 'btn-primary' : ''}" style="border:none;" onclick="filterByCategory('all')">All Standards (${d.total})</button>
+        <button class="btn ${state.filters.category === 'standard_resistor' ? 'btn-primary' : ''}" style="border:none;" onclick="filterByCategory('standard_resistor')">Resistors (${d.sets.flatMap(s => s.assets).filter(a => a.category === 'standard_resistor').length})</button>
+        <button class="btn ${state.filters.category === 'dcv_reference' ? 'btn-primary' : ''}" style="border:none;" onclick="filterByCategory('dcv_reference')">DCV 732A (${d.sets.flatMap(s => s.assets).filter(a => a.category === 'dcv_reference').length})</button>
+        <button class="btn ${state.filters.category === 'ac_divider' ? 'btn-primary' : ''}" style="border:none;" onclick="filterByCategory('ac_divider')">AC Dividers (${d.sets.flatMap(s => s.assets).filter(a => a.category === 'ac_divider').length})</button>
+        <button class="btn ${state.filters.category === 'waveform_generator' ? 'btn-primary' : ''}" style="border:none;" onclick="filterByCategory('waveform_generator')">33622A WFG (${d.sets.flatMap(s => s.assets).filter(a => a.category === 'waveform_generator').length})</button>
       </div>
 
       <div style="display:flex; align-items:center; gap:8px;">
-        <input type="search" placeholder="Search serial, model, equipment ID..." style="width:240px;" value="${state.filters.query}" oninput="handleSearch(this.value)">
+        <input type="search" placeholder="Search serial, model, equipment ID..." style="width:240px;" value="${escapeHtml(state.filters.query)}" oninput="handleSearch(this.value)">
       </div>
     </div>
 
@@ -243,7 +243,7 @@ function renderDashboard() {
         <span style="color:var(--ink-muted); font-size:11px; font-weight:700;">ACTIVE FILTERS:</span>
         ${activeFilterChips.map(c => `
           <span class="filter-chip-pill">
-            ${c.label}
+            ${escapeHtml(c.label)}
             <span class="filter-chip-remove" onclick="removeFilter('${c.key}')">&times;</span>
           </span>
         `).join('')}
@@ -308,14 +308,14 @@ function renderFleetRows() {
 
         rowsHtml += `
           <tr onclick="router.navigate('asset_detail', { asset_id: ${a.id} })">
-            <td class="mono" style="color:var(--primary-accent); font-weight:700;">${a.serial}</td>
-            <td style="font-weight:600;">${a.model || '—'}</td>
-            <td class="mono" style="color:var(--ink-muted);">${a.asset_number || '—'}</td>
+            <td class="mono" style="color:var(--primary-accent); font-weight:700;">${escapeHtml(a.serial)}</td>
+            <td style="font-weight:600;">${escapeHtml(a.model || '—')}</td>
+            <td class="mono" style="color:var(--ink-muted);">${escapeHtml(a.asset_number || '—')}</td>
             <td class="mono right">${nomDisplay}</td>
-            <td style="text-align:center;"><span class="badge badge-neutral">${s.set_id || '—'}</span></td>
+            <td style="text-align:center;"><span class="badge badge-neutral">${escapeHtml(s.set_id || '—')}</span></td>
             <td style="color:var(--ink-muted);">${catDisplay}</td>
             <td class="mono right">${a.num_calibrations}</td>
-            <td class="mono">${a.last_cal_date || '—'}</td>
+            <td class="mono">${escapeHtml(a.last_cal_date || '—')}</td>
             <td class="mono right" style="font-weight:600;">${measDisplay}</td>
             <td>${badgeHtml}</td>
           </tr>
@@ -397,11 +397,11 @@ function renderAlertsView() {
           <tbody>
             ${alerts.length ? alerts.map(a => `
               <tr>
-                <td class="mono" style="color:var(--primary-accent); font-weight:700;">${a.serial}</td>
-                <td style="font-weight:600;">${a.model || '—'}</td>
-                <td class="mono">${a.asset_number || '—'}</td>
-                <td><span class="badge badge-neutral">${a.set_name || '—'}</span></td>
-                <td>${a.category}</td>
+                <td class="mono" style="color:var(--primary-accent); font-weight:700;">${escapeHtml(a.serial)}</td>
+                <td style="font-weight:600;">${escapeHtml(a.model || '—')}</td>
+                <td class="mono">${escapeHtml(a.asset_number || '—')}</td>
+                <td><span class="badge badge-neutral">${escapeHtml(a.set_name || '—')}</span></td>
+                <td>${escapeHtml(a.category)}</td>
                 <td class="mono">${formatMeasured(a.last_measured, a.nominal_ohms, a.category, a.unit)}</td>
                 <td>
                   ${a.status === 'reviewed_out_of_trend' 
@@ -438,12 +438,12 @@ function renderAssetDetail() {
     <!-- Top Command Card -->
     <div class="panel" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
       <div>
-        <div style="font-size:20px; font-weight:700; color:var(--ink);">${a.model || a.serial}</div>
+        <div style="font-size:20px; font-weight:700; color:var(--ink);">${escapeHtml(a.model || a.serial)}</div>
         <div style="font-size:12px; color:var(--ink-muted); margin-top:2px;">
-          Serial: <strong class="mono" style="color:var(--primary-accent); cursor:pointer;" onclick="app.copyToClipboard('${a.serial}', 'Serial')">${a.serial}</strong> · 
-          Equipment ID: <strong class="mono" style="cursor:pointer;" onclick="app.copyToClipboard('${a.asset_number || ''}', 'Equipment ID')">${a.asset_number || '—'}</strong> · 
-          Category: <strong>${a.category}</strong> · 
-          Set: <strong>${a.set_id || 'Unassigned'}</strong>
+          Serial: <strong class="mono" style="color:var(--primary-accent); cursor:pointer;" onclick="app.copyToClipboard(this.textContent, 'Serial')">${escapeHtml(a.serial)}</strong> ·
+          Equipment ID: <strong class="mono" style="cursor:pointer;" onclick="app.copyToClipboard(this.textContent, 'Equipment ID')">${escapeHtml(a.asset_number || '—')}</strong> ·
+          Category: <strong>${escapeHtml(a.category)}</strong> ·
+          Set: <strong>${escapeHtml(a.set_id || 'Unassigned')}</strong>
         </div>
       </div>
       <div style="display:flex; gap:8px;">
@@ -463,11 +463,11 @@ function renderAssetDetail() {
       <div class="panel" style="margin-bottom:0;">
         <div class="panel-header">
           <div class="panel-title">Active Test Series Summary</div>
-          <span class="badge badge-neutral">${activeTp ? activeTp.point_name : (a.nominal_ohms + ' Ω')}</span>
+          <span class="badge badge-neutral">${escapeHtml(activeTp ? activeTp.point_name : (a.nominal_ohms + ' Ω'))}</span>
         </div>
         <div style="display:grid; grid-template-columns: auto 1fr; gap:8px 20px; font-size:12.5px;">
           <span style="color:var(--ink-muted);">Classification:</span>
-          <span class="mono">${activeTp ? activeTp.group_name : (a.source_sheet || 'Standard')}</span>
+          <span class="mono">${escapeHtml(activeTp ? activeTp.group_name : (a.source_sheet || 'Standard'))}</span>
           <span style="color:var(--ink-muted);">Baseline Fit Role:</span>
           <span><strong>${d.trend ? `${d.trend.n} historical points fitted; latest point held out` : 'Insufficient baseline points'}</strong></span>
           <span style="color:var(--ink-muted);">Calibrations:</span>
@@ -512,16 +512,16 @@ function renderAssetDetail() {
                     style="cursor:pointer;"
                     onclick="switchTestPoint(${tp.id})">
                   <td style="font-weight:${tp.id === d.active_test_point_id ? '700; color:var(--primary-accent);' : '600;'}">
-                    ${tp.point_name}
+                    ${escapeHtml(tp.point_name)}
                   </td>
-                  <td style="color:var(--ink-muted); font-size:12px;">${tp.group_name || '—'}</td>
+                  <td style="color:var(--ink-muted); font-size:12px;">${escapeHtml(tp.group_name || '—')}</td>
                   <td class="mono right" style="font-weight:600;">
                     ${formatMeasured(tp.latest_value, tp.nominal_value, a.category, tp.unit)}
                   </td>
                   <td class="mono right" style="color:var(--primary); font-weight:600;">
-                    ${tp.drift_display || '—'}
+                    ${escapeHtml(tp.drift_display || '—')}
                   </td>
-                  <td class="mono">${tp.latest_date || '—'}</td>
+                  <td class="mono">${escapeHtml(tp.latest_date || '—')}</td>
                   <td>
                     ${tp.status === 'ok' ? '<span class="badge badge-ok"><span class="badge-dot"></span>In Trend</span>' : (tp.status === 'reviewed_out_of_trend' ? '<span class="badge badge-reviewed"><span class="badge-dot"></span>Reviewed</span>' : (tp.status === 'out_of_trend' ? '<span class="badge badge-warn"><span class="badge-dot"></span>Out of Trend</span>' : '<span class="badge badge-neutral"><span class="badge-dot"></span>Baseline</span>'))}
                   </td>
@@ -542,11 +542,11 @@ function renderAssetDetail() {
     <div class="panel" style="margin-bottom:16px;">
       <div class="panel-header" style="margin-bottom:10px;">
         <div class="panel-title">
-          Trend Analysis: ${activeTp ? activeTp.point_name : (a.model || a.serial)}
+          Trend Analysis: ${escapeHtml(activeTp ? activeTp.point_name : (a.model || a.serial))}
         </div>
         <div style="display:flex; gap:4px; background:var(--track); padding:2px; border-radius:var(--radius-sm); border:1px solid var(--line);">
           <button id="btnChartPrimary" class="btn ${state.chartMode === 'primary' ? 'btn-primary' : ''}" style="border:none; padding:3px 8px; font-size:11px;" onclick="setChartDisplayMode('primary')">
-            Measured (${a.unit})
+            Measured (${escapeHtml(a.unit)})
           </button>
           <button id="btnChartRelative" class="btn ${state.chartMode === 'relative' ? 'btn-primary' : ''}" style="border:none; padding:3px 8px; font-size:11px;" onclick="setChartDisplayMode('relative')">
             ${a.unit === 'dB' ? 'Deviation (dB)' : 'Relative Error (ppm)'}
@@ -566,7 +566,7 @@ function renderAssetDetail() {
 
     <!-- Calibration History Table (With Notes and Correct Status Badges) -->
     <div class="panel-header">
-      <div class="panel-title">Calibration History: ${activeTp ? activeTp.point_name : a.model}</div>
+      <div class="panel-title">Calibration History: ${escapeHtml(activeTp ? activeTp.point_name : a.model)}</div>
     </div>
     <div class="table-container">
       <table>
@@ -607,11 +607,11 @@ function renderAssetDetail() {
             const measStr = formatMeasured(c.measured_value, activeTp?.nominal_value || a.nominal_ohms, a.category, a.unit);
             const lowerStr = formatBound(c.lower, activeTp?.nominal_value || a.nominal_ohms, a.category, a.unit);
             const upperStr = formatBound(c.upper, activeTp?.nominal_value || a.nominal_ohms, a.category, a.unit);
-            const uncertStr = formatUncertainty(c, a.category);
+            const uncertStr = formatUncertainty(c, a.category, activeTp?.nominal_value ?? a.nominal_ohms);
 
             return `
               <tr>
-                <td class="mono" style="font-weight:600;">${c.date}</td>
+                <td class="mono" style="font-weight:600;">${escapeHtml(c.date)}</td>
                 <td>${roleDisplay}</td>
                 <td class="mono right" style="font-weight:700;">${measStr}</td>
                 <td class="mono right" style="color:var(--ink-muted);">${uncertStr}</td>
@@ -629,7 +629,7 @@ function renderAssetDetail() {
                 <td>${statusBadge}</td>
                 <td style="text-align:center;">
                   ${c.reviewer_comment || c.reviewer_attachment_path ? `
-                    <button class="btn" style="padding:1px 6px; font-size:11px;" onclick="openNoteModal('${c.date}', '${escapeQuotes(c.reviewer_comment || '')}', '${escapeQuotes(c.reviewer_attachment_path || '')}', ${c.id})">Note</button>
+                    <button class="btn" style="padding:1px 6px; font-size:11px;" onclick="openStoredNote(${c.id})">Note</button>
                   ` : '<span style="color:var(--ink-faint);">—</span>'}
                 </td>
                 <td style="text-align:right;">
@@ -671,7 +671,7 @@ function renderDynamicRightCard(a, d, stability) {
             </span>
           </div>
           <div style="font-size:12.5px;">
-            <div style="color:var(--ink-muted); margin-bottom:4px;">Spec: <strong>${stability.spec_description || 'Manufacturer Tolerance'}</strong></div>
+            <div style="color:var(--ink-muted); margin-bottom:4px;">Spec: <strong>${escapeHtml(stability.spec_description || 'Manufacturer Tolerance')}</strong></div>
             <div style="color:var(--ink-muted);">
               Observed drift across <strong>${stability.elapsed_days} days</strong>: 
               <strong class="mono" style="color:${isExceeded ? 'var(--warn)' : 'var(--ok)'};">
@@ -814,11 +814,14 @@ function renderChart(d) {
     }
   });
 
-  const upperData = cals.map(c => ({ x: c.accumulated_days, y: isPrimary ? c.upper : (c.upper ? c.upper_error_ppm : null) }));
-  const lowerData = cals.map(c => ({ x: c.accumulated_days, y: isPrimary ? c.lower : (c.lower ? c.lower_error_ppm : null) }));
-  const predData  = cals.map(c => ({ x: c.accumulated_days, y: isPrimary ? c.predicted : (c.predicted ? c.predicted_error_ppm : null) }));
+  const nominal = d.active_test_point?.nominal_value ?? d.asset.nominal_ohms;
+  const relativeBound = value => value === null || value === undefined ? null :
+    (assetUnit === 'dB' || !nominal ? value : (value - nominal) / nominal * 1e6);
+  const upperData = cals.map(c => ({ x: c.accumulated_days, y: isPrimary ? c.upper : relativeBound(c.upper) }));
+  const lowerData = cals.map(c => ({ x: c.accumulated_days, y: isPrimary ? c.lower : relativeBound(c.lower) }));
+  const predData  = cals.map(c => ({ x: c.accumulated_days, y: isPrimary ? c.predicted : relativeBound(c.predicted) }));
 
-  state.chartInstance = new Chart(ctx, {
+  state.chartInstance = new CalibrationChart(ctx, {
     type: 'scatter',
     data: {
       datasets: [
@@ -909,7 +912,7 @@ function renderChart(d) {
               const modeLabel = isPrimary ? ` ${assetUnit}` : (assetUnit === 'dB' ? ' dB' : ' ppm');
               const val = context.parsed.y;
               const lines = [
-                `Date: ${c.date}`,
+                `Date: ${escapeHtml(c.date)}`,
                 `${context.dataset.label}: ${val !== null ? val.toFixed(assetUnit === 'V' ? 8 : (assetUnit === 'dB' ? 5 : 5)) + modeLabel : '—'}`
               ];
               if (c.pressure_hpa) {
@@ -983,7 +986,7 @@ function populateTraceDrawer(d) {
     stabilityBlockHtml = `
       <div style="margin-top:20px; padding-top:14px; border-top:1px dashed var(--line);">
         <div style="font-weight:700; color:var(--ink); margin-bottom:4px;">Manufacturer Stability Derivation</div>
-        <div style="font-size:11.5px; color:var(--ink-muted); margin-bottom:8px;">${s.spec_description || 'Manufacturer Step Spec'}</div>
+        <div style="font-size:11.5px; color:var(--ink-muted); margin-bottom:8px;">${escapeHtml(s.spec_description || 'Manufacturer Step Spec')}</div>
         <table class="trace-table">
           <tr>
             <td>Interval Evaluated<span class="math-param-help">Consecutive cal points</span></td>
@@ -1092,7 +1095,7 @@ function renderHTBasic() {
           <label style="font-size:11px; font-weight:700; color:var(--ink-muted);">0.1 Ω Reference Resistor</label>
           <select id="htResistor" style="width:100%; margin-top:4px;" onchange="updateHTBasicConfig()">
             ${Object.keys(ctx.zero_pt_one_options).map(pn => `
-              <option value="${pn}" ${ctx.zero_pt_one_pn === pn ? 'selected' : ''}>${ctx.zero_pt_one_options[pn]}</option>
+              <option value="${escapeHtml(pn)}" ${ctx.zero_pt_one_pn === pn ? 'selected' : ''}>${escapeHtml(ctx.zero_pt_one_options[pn])}</option>
             `).join('')}
           </select>
         </div>
@@ -1101,7 +1104,7 @@ function renderHTBasic() {
           <label style="font-size:11px; font-weight:700; color:var(--ink-muted);">33622A Waveform Generator</label>
           <select id="htWfg" style="width:100%; margin-top:4px;" onchange="updateHTBasicConfig()">
             ${Object.keys(ctx.wfg_options).map(sn => `
-              <option value="${sn}" ${ctx.wfg_serial === sn ? 'selected' : ''}>${ctx.wfg_options[sn].label}</option>
+              <option value="${escapeHtml(sn)}" ${ctx.wfg_serial === sn ? 'selected' : ''}>${escapeHtml(ctx.wfg_options[sn].label)}</option>
             `).join('')}
           </select>
         </div>
@@ -1150,22 +1153,22 @@ function renderHTBasic() {
                   <td class="mono" style="color:var(--primary-accent); font-weight:700;">${ctx.set_name === 'Set 1' ? '286300.txt' : '286325.txt'}</td>
                   <td><span class="badge badge-reviewed">0.1 Ω Std</span></td>
                   <td class="mono right">0.1 Ω</td>
-                  <td class="mono" style="color:var(--primary-accent); font-weight:700;">${ctx.zero_pt_one_pn}</td>
-                  <td class="mono">${d01.serial || '—'}</td>
+                  <td class="mono" style="color:var(--primary-accent); font-weight:700;">${escapeHtml(ctx.zero_pt_one_pn)}</td>
+                  <td class="mono">${escapeHtml(d01.serial || '—')}</td>
                   <td class="mono right" style="color:var(--primary); font-weight:700;">${d01.last_measured ? d01.last_measured.toFixed(9) + ' Ω' : '<span style="color:var(--warn);">Missing</span>'}</td>
-                  <td class="mono">${d01.last_date || '—'}</td>
+                  <td class="mono">${escapeHtml(d01.last_date || '—')}</td>
                 </tr>
               `;
             })()}
             ${ctx.all_resistors.filter(r => r.set === ctx.set_name).map(r => `
               <tr>
-                <td class="mono">${r.file}</td>
-                <td>${r.rx_tag}</td>
-                <td class="mono right">${r.nominal}</td>
-                <td class="mono" style="color:var(--primary-accent); font-weight:700;">${r.pn}</td>
-                <td class="mono">${r.serial}</td>
+                <td class="mono">${escapeHtml(r.file)}</td>
+                <td>${escapeHtml(r.rx_tag)}</td>
+                <td class="mono right">${escapeHtml(r.nominal)}</td>
+                <td class="mono" style="color:var(--primary-accent); font-weight:700;">${escapeHtml(r.pn)}</td>
+                <td class="mono">${escapeHtml(r.serial)}</td>
                 <td class="mono right">${formatMeasured(r.measured_value, r.measured_value, 'standard_resistor', 'Ω')}</td>
-                <td class="mono">${r.cal_date}</td>
+                <td class="mono">${escapeHtml(r.cal_date)}</td>
               </tr>
             `).join('')}
           ` : ''}
@@ -1175,13 +1178,13 @@ function renderHTBasic() {
             <tr style="background:var(--track); font-weight:700;"><td colspan="7">📁 AC VOLTAGE DIVIDERS (DIVMEANS.TXT — 10mV &amp; 100mV across 6 Frequencies)</td></tr>
             ${ctx.divider_test_points.filter(dp => dp.set === ctx.set_name).map(dp => `
               <tr>
-                <td class="mono">${dp.file}</td>
-                <td>${dp.rx_tag}</td>
-                <td class="mono right">${dp.nominal}</td>
-                <td class="mono" style="color:var(--primary-accent); font-weight:700;">${dp.pn}</td>
-                <td class="mono">${dp.serial}</td>
+                <td class="mono">${escapeHtml(dp.file)}</td>
+                <td>${escapeHtml(dp.rx_tag)}</td>
+                <td class="mono right">${escapeHtml(dp.nominal)}</td>
+                <td class="mono" style="color:var(--primary-accent); font-weight:700;">${escapeHtml(dp.pn)}</td>
+                <td class="mono">${escapeHtml(dp.serial)}</td>
                 <td class="mono right">${dp.measured_value ? dp.measured_value.toFixed(5) : '<span style="color:var(--warn);">Missing</span>'}</td>
-                <td class="mono">${dp.cal_date}</td>
+                <td class="mono">${escapeHtml(dp.cal_date)}</td>
               </tr>
             `).join('')}
           ` : ''}
@@ -1191,13 +1194,13 @@ function renderHTBasic() {
             <tr style="background:var(--track); font-weight:700;"><td colspan="7">📁 33622A WAVEFORM GENERATOR (${ctx.wfg_options[ctx.wfg_serial]?.file_id}_Extended.txt — 11 cf Data Points)</td></tr>
             ${(ctx.wfg_all_points[ctx.wfg_serial] || []).map(pt => `
               <tr>
-                <td class="mono" style="color:var(--primary-accent);">${pt.file}</td>
-                <td>${pt.rx_tag}</td>
-                <td class="mono right">${pt.nominal}</td>
-                <td class="mono" style="color:var(--primary-accent); font-weight:700;">${pt.pn}</td>
-                <td class="mono">${pt.serial}</td>
+                <td class="mono" style="color:var(--primary-accent);">${escapeHtml(pt.file)}</td>
+                <td>${escapeHtml(pt.rx_tag)}</td>
+                <td class="mono right">${escapeHtml(pt.nominal)}</td>
+                <td class="mono" style="color:var(--primary-accent); font-weight:700;">${escapeHtml(pt.pn)}</td>
+                <td class="mono">${escapeHtml(pt.serial)}</td>
                 <td class="mono right" style="font-weight:700;">${pt.measured_value !== null ? (pt.measured_value > 0 ? '+' : '') + pt.measured_value.toFixed(5) + ' dB' : '<span style="color:var(--warn);">Missing</span>'}</td>
-                <td class="mono">${pt.cal_date}</td>
+                <td class="mono">${escapeHtml(pt.cal_date)}</td>
               </tr>
             `).join('')}
           ` : ''}
@@ -1236,14 +1239,14 @@ async function renderSettings() {
 
       <div style="margin-bottom:14px;">
         <label style="font-weight:700; font-size:12px; color:var(--ink-muted);">Local Working Database</label>
-        <input type="text" readonly value="${s.local_db_path}" style="width:100%; margin-top:4px;" class="mono">
+        <input type="text" readonly value="${escapeHtml(s.local_db_path)}" style="width:100%; margin-top:4px;" class="mono">
       </div>
 
       <div style="margin-bottom:14px;">
         <label style="font-weight:700; font-size:12px; color:var(--ink-muted);">Shared Lab Network Backup UNC Path</label>
-        <input type="text" id="netDbPathInput" value="${s.network_db_path}" style="width:100%; margin-top:4px;" class="mono">
+        <input type="text" id="netDbPathInput" value="${escapeHtml(s.network_db_path)}" style="width:100%; margin-top:4px;" class="mono">
         <div style="font-size:11px; color:var(--ink-faint); margin-top:3px;">
-          One-way SQLite backup automatically replicates the local database here at midnight or on-demand.
+          Backups create separate timestamped folders beside this path. They include the database and available certificates and attachments; they do not merge workstation changes.
         </div>
       </div>
 
@@ -1279,7 +1282,7 @@ const app = {
     if (!container) return;
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    toast.innerHTML = `<span>${message}</span>`;
+    toast.textContent = String(message);
     container.appendChild(toast);
     setTimeout(() => {
       toast.style.opacity = '0';
@@ -1308,7 +1311,7 @@ const app = {
     if (res.ok) {
       if (pulse) pulse.className = 'sync-pulse';
       if (text) text.textContent = `Synced: ${res.time.slice(11)}`;
-      this.showToast(`Database backed up successfully to network share.`, 'success');
+      this.showToast(res.missing_documents?.length ? `Backup completed; ${res.missing_documents.length} missing document(s) are listed in its manifest.` : 'Database and documents backed up successfully.', res.missing_documents?.length ? 'warning' : 'success');
     } else {
       if (pulse) pulse.className = 'sync-pulse error';
       if (text) text.textContent = 'Backup Failed';
@@ -1336,6 +1339,7 @@ async importCert() {
         renderMultiPointImport(res);
         return;
       }
+      window.pendingScalarImport = res;
       const card = document.getElementById('genericModalCard');
       card.innerHTML = `
         <div class="panel-header">
@@ -1344,20 +1348,21 @@ async importCert() {
         </div>
         <p style="color:var(--ink-muted); margin:0 0 12px 0;">Verify extracted certificate values before committing to database:</p>
         <table class="trace-table" style="margin-bottom:16px;">
-          <tr><td>Serial Number</td><td><strong class="mono">${res.serial}</strong></td></tr>
-          <tr><td>Calibration Date</td><td><strong class="mono">${res.cal_date}</strong></td></tr>
+          <tr><td>Serial Number</td><td><strong class="mono">${escapeHtml(res.serial)}</strong></td></tr>
+          <tr><td>Calibration Date</td><td><strong class="mono">${escapeHtml(res.cal_date)}</strong></td></tr>
           <tr><td>Measured Value</td><td><strong class="mono" style="color:var(--primary-accent);">${res.measured_value}</strong></td></tr>
           <tr><td>Relative Uncertainty</td><td><span class="mono">${res.mu_relative ? (res.mu_relative * 1e6).toFixed(2) + ' ppm' : '—'}</span></td></tr>
-          <tr><td>Matched Standard</td><td>${res.asset ? res.asset.model + ' (' + res.asset.asset_number + ')' : '<span style="color:var(--warn);">Unregistered Serial</span>'}</td></tr>
+          <tr><td>Matched Standard</td><td>${res.asset ? escapeHtml(res.asset.model + ' (' + res.asset.asset_number + ')') : '<span style="color:var(--warn);">Unregistered Serial</span>'}</td></tr>
         </table>
         ${res.warnings && res.warnings.length ? `
           <div style="background:var(--warn-bg); border:1px solid var(--warn-border); border-radius:4px; padding:8px 10px; margin-bottom:14px; font-size:11.5px; color:var(--warn);">
-            ${res.warnings.map(w => `<div>⚠ ${w}</div>`).join('')}
+            ${res.warnings.map(w => `<div>⚠ ${escapeHtml(w)}</div>`).join('')}
           </div>
         ` : ''}
         <div style="display:flex; justify-content:flex-end; gap:8px;">
           <button class="btn" onclick="closeGenericModal()">Cancel</button>
-          <button class="btn btn-primary" ${!res.asset ? 'disabled' : ''} onclick="commitImport(${JSON.stringify(res).replace(/"/g, '&quot;')})">Commit to Database</button>
+          <label><input type="checkbox" id="scalarVerified"> I verified the values and warnings against the PDF.</label>
+          <button class="btn btn-primary" ${!res.asset ? 'disabled' : ''} onclick="commitImport(window.pendingScalarImport)">Commit to Database</button>
         </div>
       `;
       document.getElementById('genericModal').classList.add('open');
@@ -1385,7 +1390,7 @@ async importCert() {
           <option value="all">Full Metrology Master (All 34 Standards)</option>
           <option value="Set 1">Station 1 Kit (Set 1 Standards)</option>
           <option value="Set 2">Station 2 Kit (Set 2 Standards)</option>
-          ${state.activeAssetId ? `<option value="current">Current Asset Only (${state.activeAssetDetail?.asset?.model || 'Asset'})</option>` : ''}
+          ${state.activeAssetId ? `<option value="current">Current Asset Only (${escapeHtml(state.activeAssetDetail?.asset?.model || 'Asset')})</option>` : ''}
         </select>
       </div>
 
@@ -1421,11 +1426,16 @@ function applyTheme(theme) {
 }
 
 async function commitImport(res) {
+  if (!res || !document.getElementById('scalarVerified')?.checked) {
+    app.showToast('Verify the values and warnings against the certificate first.', 'warning');
+    return;
+  }
   const result = await api().commit_imported_certificate({
     asset_id: res.asset.id,
     cal_date: res.cal_date,
     measured_value: res.measured_value,
     mu_relative: res.mu_relative,
+    cert_number: res.cert_number,
     pdf_path: res.pdf_path
   });
   closeGenericModal();
@@ -1646,17 +1656,22 @@ function renderMultiPointImport(res) {
   document.getElementById('genericModal').classList.add('open');
 }
 
+function openStoredNote(calId) {
+  const cal = state.activeAssetDetail?.calibrations.find(item => item.id === calId);
+  if (cal) openNoteModal(cal.date, cal.reviewer_comment, cal.reviewer_attachment_path, calId);
+}
+
 function openNoteModal(date, comment, attachPath, calId) {
   const card = document.getElementById('genericModalCard');
   card.innerHTML = `
     <div class="panel-header">
-      <div class="panel-title">Reviewer Quality Note — ${date}</div>
+      <div class="panel-title">Reviewer Quality Note — ${escapeHtml(date)}</div>
       <button class="btn" style="padding:2px 7px;" onclick="closeGenericModal()">&times;</button>
     </div>
-    <p style="font-size:13.5px; color:var(--ink); line-height:1.6; white-space:pre-wrap; margin:0 0 16px 0;">${comment || 'No note text entered.'}</p>
+    <p style="font-size:13.5px; color:var(--ink); line-height:1.6; white-space:pre-wrap; margin:0 0 16px 0;">${escapeHtml(comment || 'No note text entered.')}</p>
     ${attachPath ? `
       <div style="padding-top:12px; border-top:1px dashed var(--line); margin-bottom:14px;">
-        <span style="font-size:12px; color:var(--ink-muted);">Attached File: <strong>${attachPath.split(/[\\\\/]/).pop()}</strong></span>
+        <span style="font-size:12px; color:var(--ink-muted);">Attached File: <strong>${escapeHtml(attachPath.split(/[\\\\/]/).pop())}</strong></span>
       </div>
     ` : ''}
     <div style="display:flex; justify-content:flex-end;">
@@ -1670,69 +1685,99 @@ function openEditCalModal(calId) {
   api().get_calibration_for_edit(calId).then(cal => {
     if (!cal) return;
     const card = document.getElementById('genericModalCard');
-    card.innerHTML = `
-      <div class="panel-header">
-        <div class="panel-title">Edit Calibration Event (${cal.cal_date})</div>
-        <button class="btn" style="padding:2px 7px;" onclick="closeGenericModal()">&times;</button>
-      </div>
-      <form onsubmit="handleSaveCalEdit(event, ${cal.id})">
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
-          <div>
-            <label style="font-size:11px; font-weight:700; color:var(--ink-muted);">Cal Date</label>
-            <input type="date" id="editCalDate" value="${cal.cal_date}" required style="width:100%;">
-          </div>
-          <div>
-            <label style="font-size:11px; font-weight:700; color:var(--ink-muted);">Measured Reading</label>
-            <input type="number" step="any" id="editCalMeas" value="${cal.measured_value}" required style="width:100%;" class="mono">
-          </div>
-        </div>
-
-        <div style="margin-bottom:12px;">
-          <label style="font-size:11px; font-weight:700; color:var(--ink-muted);">Reviewer Quality Note</label>
-          <textarea id="editCalComment" style="width:100%; height:60px;" placeholder="Document investigation or acceptance notes...">${cal.reviewer_comment || ''}</textarea>
-        </div>
-
-        <div style="margin-bottom:14px; display:flex; flex-direction:column; gap:6px;">
-          <label style="display:flex; align-items:center; gap:8px; font-size:12px; cursor:pointer;">
-            <input type="checkbox" id="editCalAdj" ${cal.is_adjusted ? 'checked' : ''}>
-            <span>Instrument was Adjusted during this calibration (Resets Trend Epoch)</span>
-          </label>
-          <label style="display:flex; align-items:center; gap:8px; font-size:12px; cursor:pointer;">
-            <input type="checkbox" id="editCalExcl" ${cal.excluded_from_regression ? 'checked' : ''}>
-            <span>Exclude from regression fit (Verified Outlier)</span>
-          </label>
-        </div>
-
-        <div style="display:flex; justify-content:flex-end; gap:8px;">
-          <button type="button" class="btn" onclick="closeGenericModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary">Save Changes</button>
-        </div>
-      </form>
-    `;
+    card.replaceChildren();
+    const title = document.createElement('h3');
+    title.textContent = 'Edit Calibration Event';
+    card.appendChild(title);
+    const form = document.createElement('form');
+    card.appendChild(form);
+    const fields = {};
+    const addInput = (parent, key, label, type, value, required = false) => {
+      const wrapper = document.createElement('label');
+      wrapper.style.cssText = 'display:block;margin:10px 0;font-size:12px';
+      const caption = document.createElement('span');
+      caption.textContent = label;
+      wrapper.appendChild(caption);
+      const input = document.createElement('input');
+      input.type = type;
+      if (type === 'checkbox') input.checked = Boolean(value);
+      else input.value = value ?? '';
+      if (type === 'number') input.step = 'any';
+      input.required = required;
+      input.style.cssText = type === 'checkbox' ? 'margin-left:10px' : 'display:block;width:100%';
+      wrapper.appendChild(input);
+      parent.appendChild(wrapper);
+      return input;
+    };
+    fields.cal_date = addInput(form, 'date', 'Calibration date', 'date', cal.cal_date, true);
+    fields.cert_number = addInput(form, 'certificate', 'Certificate number', 'text', cal.cert_number);
+    const points = cal.test_point_readings || [];
+    if (!points.length) {
+      fields.measured_value = addInput(form, 'measured', 'Measured reading', 'number', cal.measured_value, true);
+      fields.mu_relative = addInput(form, 'mu', 'Relative uncertainty (ratio)', 'number', cal.mu_relative, true);
+      fields.mu_relative.min = '0';
+    }
+    const pointInputs = points.map(point => {
+      const group = document.createElement('fieldset');
+      const legend = document.createElement('legend');
+      legend.textContent = point.point_name;
+      group.appendChild(legend);
+      form.appendChild(group);
+      const value = addInput(group, 'value', `Measured value (${point.unit})`, 'number', point.measured_value, true);
+      let uncertainty = null;
+      if (point.uncertainty !== null && point.uncertainty !== undefined) {
+        uncertainty = addInput(group, 'uncertainty', point.unit === 'V' ? 'Uncertainty (nV)' : 'Uncertainty (ppm)', 'number', point.uncertainty, true);
+        uncertainty.min = '0';
+      }
+      const excluded = addInput(group, 'excluded', 'Exclude this point from regression', 'checkbox', point.excluded_from_regression);
+      return {point, value, uncertainty, excluded};
+    });
+    fields.pressure_hpa = addInput(form, 'pressure', 'Pressure (hPa)', 'number', cal.pressure_hpa);
+    fields.location = addInput(form, 'location', 'Location', 'text', cal.location);
+    fields.is_adjusted = addInput(form, 'adjusted', 'Instrument adjusted (starts a new trend epoch)', 'checkbox', cal.is_adjusted);
+    fields.excluded_from_regression = addInput(form, 'exclude', 'Exclude this entire event from regression', 'checkbox', cal.excluded_from_regression);
+    const caption = document.createElement('label');
+    caption.textContent = 'Reviewer quality note';
+    const comment = document.createElement('textarea');
+    comment.value = cal.reviewer_comment || '';
+    comment.style.cssText = 'width:100%;height:70px';
+    caption.appendChild(comment);
+    form.appendChild(caption);
+    const cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.className = 'btn'; cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => closeGenericModal());
+    const save = document.createElement('button');
+    save.type = 'submit'; save.className = 'btn btn-primary'; save.textContent = 'Save changes';
+    form.append(cancel, save);
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      save.disabled = true;
+      const data = {id: cal.id, reviewer_comment: comment.value};
+      Object.entries(fields).forEach(([name, input]) => {
+        data[name] = input.type === 'checkbox' ? input.checked : input.value;
+      });
+      data.test_point_readings = pointInputs.map(({point, value, uncertainty, excluded}) => ({
+        tp_id: point.tp_id, measured_value: value.value,
+        uncertainty: uncertainty ? uncertainty.value : null,
+        excluded_from_regression: excluded.checked
+      }));
+      try {
+        const result = await api().save_calibration_edit(data);
+        if (!result.ok) {
+          app.showToast(result.error || 'Calibration could not be saved.', 'error');
+          return;
+        }
+        closeGenericModal();
+        app.showToast('Calibration record updated successfully.', 'success');
+        router.navigate('asset_detail', {asset_id: state.activeAssetId, tp_id: state.activeTestPointId});
+      } catch (error) {
+        app.showToast(`Calibration could not be saved: ${error.message}`, 'error');
+      } finally {
+        save.disabled = false;
+      }
+    });
     document.getElementById('genericModal').classList.add('open');
-  });
-}
-
-async function handleSaveCalEdit(e, calId) {
-  e.preventDefault();
-  const date = document.getElementById('editCalDate').value;
-  const meas = document.getElementById('editCalMeas').value;
-  const comment = document.getElementById('editCalComment').value;
-  const isAdj = document.getElementById('editCalAdj').checked;
-  const isExcl = document.getElementById('editCalExcl').checked;
-
-  await api().save_calibration_edit({
-    id: calId,
-    cal_date: date,
-    measured_value: meas,
-    reviewer_comment: comment,
-    is_adjusted: isAdj,
-    excluded_from_regression: isExcl
-  });
-
-  closeGenericModal();
-  app.showToast('Calibration record updated successfully.', 'success');
-  router.navigate('asset_detail', { asset_id: state.activeAssetId, tp_id: state.activeTestPointId });
+  }).catch(error => app.showToast(`Could not open calibration: ${error.message}`, 'error'));
 }
 
 function closeGenericModal() {

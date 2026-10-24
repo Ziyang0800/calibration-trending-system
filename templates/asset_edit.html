@@ -16,6 +16,7 @@
 
   <div class="panel">
     <form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <p>
         <label style="font-weight:600;">Category / Equipment Type</label>
         <select name="category" style="width:100%; margin-top:4px;">
@@ -76,6 +77,7 @@
     </p>
     <form method="post" action="{{ url_for('asset_delete', asset_id=asset.id) }}"
           onsubmit="return confirm('Permanently delete {{ asset.serial }} ({{ asset.model }}) and all historical records? This cannot be undone.');">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn" type="submit" style="background:#dc2626; border-color:#dc2626; color:#ffffff;">Delete Asset</button>
     </form>
   </div>

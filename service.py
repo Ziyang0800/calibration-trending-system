@@ -17,6 +17,7 @@ import report_pdf
 import export_excel
 import store
 import winfile
+from certificate_store import archive_certificate
 from cal_cert_importer import extract_serial_and_date, extract_measurement, extract_multi_point_measurements
 
 
@@ -143,7 +144,7 @@ class CalibrationService:
                     nom = active_tp.get("nominal_value") or asset.get("nominal_ohms") or 1.0
                     rate_str = f"{(drift_rate_year / nom * 1e6):+.2f} ppm/year"
                 else:
-                    nom = asset.get("nominal_ohms") or 1.0
+                    nom = active_tp.get("nominal_value") or asset.get("nominal_ohms") or 1.0
                     rate_str = f"{(drift_rate_year / nom * 1e6):+.2f} ppm/year"
 
                 stability_calc = None
@@ -192,58 +193,95 @@ class CalibrationService:
 
     def get_calibration_for_edit(self, calibration_id):
         conn = self.get_conn()
-        cal = db.get_calibration(conn, int(calibration_id))
-        if not cal:
+        try:
+            cal = db.get_calibration(conn, int(calibration_id))
+            if not cal:
+                return None
+            rows = conn.execute(
+                "SELECT cr.test_point_id, tp.point_name, cr.measured_value, cr.uncertainty, "
+                "cr.excluded_from_regression, tp.unit FROM calibration_readings cr "
+                "JOIN test_points tp ON tp.id = cr.test_point_id WHERE cr.calibration_id = ? "
+                "ORDER BY tp.display_order, tp.id", (calibration_id,)
+            ).fetchall()
+            cal["test_point_readings"] = [dict(tp_id=r[0], point_name=r[1], measured_value=r[2],
+                uncertainty=r[3], excluded_from_regression=bool(r[4]), unit=r[5]) for r in rows]
+            return to_json_safe(cal)
+        finally:
             conn.close()
-            return None
-
-        tp_rows = conn.execute(
-            "SELECT cr.test_point_id, tp.point_name, cr.measured_value, cr.uncertainty "
-            "FROM calibration_readings cr JOIN test_points tp ON tp.id = cr.test_point_id "
-            "WHERE cr.calibration_id = ? ORDER BY tp.display_order, tp.id",
-            (calibration_id,)
-        ).fetchall()
-        conn.close()
-
-        readings = [{"tp_id": r[0], "point_name": r[1], "measured_value": r[2], "uncertainty": r[3]} for r in tp_rows]
-        return to_json_safe({**cal, "test_point_readings": readings})
 
     def save_calibration_edit(self, data):
+        """Validate a partial edit, then save the event and points in one transaction."""
+        import sqlite3
+
+        def finite(value, name, nonnegative=False):
+            value = float(value)
+            if not math.isfinite(value) or (nonnegative and value < 0):
+                raise ValueError(f"{name} must be finite" + (" and non-negative." if nonnegative else "."))
+            return value
+
         conn = self.get_conn()
-        cal_id = int(data["id"])
-        new_meas = float(data["measured_value"])
-        new_mu = float(data.get("mu_relative", 0.0))
-        comment = data.get("reviewer_comment", "").strip() or None
-        excluded = bool(data.get("excluded_from_regression"))
-        is_adj = bool(data.get("is_adjusted"))
-        loc = data.get("location", "").strip() or None
-        pressure = float(data["pressure_hpa"]) if data.get("pressure_hpa") else None
-
-        ok, error = db.update_calibration(
-            conn, cal_id,
-            cal_date=data["cal_date"],
-            measured_value=new_meas,
-            mu_relative=new_mu,
-            reviewer_comment=comment,
-            excluded_from_regression=excluded,
-            keep_existing_attachment=True,
-            pressure_hpa=pressure,
-            is_adjusted=is_adj,
-            location=loc,
-        )
-
-        tp_readings = data.get("test_point_readings", [])
-        if ok and tp_readings:
-            for tpr in tp_readings:
-                val = float(tpr["measured_value"])
-                conn.execute(
-                    "UPDATE calibration_readings SET measured_value = ? WHERE calibration_id = ? AND test_point_id = ?",
-                    (val, cal_id, int(tpr["tp_id"]))
-                )
-
-        conn.commit()
-        conn.close()
-        return to_json_safe({"ok": ok, "error": error})
+        try:
+            cal_id = int(data["id"])
+            with conn:
+                # Acquire a write reservation before reading values to be preserved.
+                conn.execute("BEGIN IMMEDIATE")
+                current = db.get_calibration(conn, cal_id)
+                if current is None:
+                    return {"ok": False, "error": "Calibration record not found."}
+                merged = {**current, **data}
+                cal_date = date.fromisoformat(str(merged["cal_date"])).isoformat()
+                measured = finite(merged["measured_value"], "Measured value")
+                mu = finite(merged["mu_relative"], "Relative uncertainty", True)
+                pressure = merged.get("pressure_hpa")
+                pressure = None if pressure in (None, "") else finite(pressure, "Pressure")
+                if pressure is not None and pressure <= 0:
+                    raise ValueError("Pressure must be positive.")
+                rows = conn.execute("SELECT test_point_id, measured_value, uncertainty, excluded_from_regression "
+                    "FROM calibration_readings WHERE calibration_id = ?", (cal_id,)).fetchall()
+                existing = {r[0]: r for r in rows}
+                submitted = data.get("test_point_readings", [])
+                if not isinstance(submitted, list):
+                    raise ValueError("Point readings must be a list.")
+                seen, updates = set(), []
+                for item in submitted:
+                    point_id = int(item["tp_id"])
+                    if point_id not in existing or point_id in seen:
+                        raise ValueError("Unknown or duplicate calibration point.")
+                    seen.add(point_id)
+                    old = existing[point_id]
+                    value = finite(item.get("measured_value", old[1]), "Point value")
+                    uncertainty = item.get("uncertainty", old[2])
+                    if uncertainty in (None, ""):
+                        if old[2] is not None:
+                            raise ValueError("An existing point uncertainty cannot be removed.")
+                        uncertainty = None
+                    else:
+                        uncertainty = finite(uncertainty, "Point uncertainty", True)
+                    excluded = int(bool(item.get("excluded_from_regression", old[3])))
+                    updates.append((value, uncertainty, excluded, cal_id, point_id))
+                if conn.execute("SELECT 1 FROM calibrations WHERE asset_id = ? AND cal_date = ? AND id != ?",
+                        (current["asset_id"], cal_date, cal_id)).fetchone():
+                    return {"ok": False, "error": "This asset already has a calibration on that date."}
+                for values in updates:
+                    conn.execute("UPDATE calibration_readings SET measured_value = ?, uncertainty = ?, "
+                        "excluded_from_regression = ? WHERE calibration_id = ? AND test_point_id = ?", values)
+                if existing:
+                    # The summary mirrors the first point and is never edited independently.
+                    measured = conn.execute("SELECT cr.measured_value FROM calibration_readings cr JOIN test_points tp "
+                        "ON tp.id = cr.test_point_id WHERE cr.calibration_id = ? ORDER BY tp.display_order, tp.id LIMIT 1",
+                        (cal_id,)).fetchone()[0]
+                conn.execute("UPDATE calibrations SET cal_date=?, measured_value=?, mu_relative=?, reviewer_comment=?, "
+                    "excluded_from_regression=?, pressure_hpa=?, is_adjusted=?, location=?, reviewer_attachment_path=?, reviewer_url=?, cert_number=? WHERE id=?",
+                    (cal_date, measured, mu, (merged.get("reviewer_comment") or "").strip() or None,
+                     int(bool(merged["excluded_from_regression"])), pressure, int(bool(merged["is_adjusted"])),
+                     (merged.get("location") or "").strip() or None, merged.get("reviewer_attachment_path"),
+                     (merged.get("reviewer_url") or "").strip() or None,
+                     (merged.get("cert_number") or "").strip() or None, cal_id))
+            return {"ok": True}
+        except (KeyError, TypeError, ValueError, sqlite3.Error) as exc:
+            return {"ok": False, "error": f"Calibration was not saved: {exc}"}
+        finally:
+            conn.close()
 
     def get_htbasic_context(self, set_name="Set 1", zero_pt_one_pn="PN010034", wfg_serial="SG53800187"):
         conn = self.get_conn()
@@ -621,6 +659,10 @@ class CalibrationService:
                     return to_json_safe({"ok": False, "error": "Measured value must be finite and relative uncertainty must be greater than zero."})
                 by_id = {}
 
+            cert_hash = None
+            if cert_pdf_path:
+                database_file = conn.execute("PRAGMA database_list").fetchone()[2]
+                cert_pdf_path, cert_hash = archive_certificate(cert_pdf_path, database_file)
             try:
                 with conn:
                     cur = conn.execute(
@@ -637,8 +679,8 @@ class CalibrationService:
                         )
             except sqlite3.IntegrityError as exc:
                 return to_json_safe({"ok": False, "duplicate": True, "error": f"Import was not committed because of a database constraint: {exc}"})
-            return to_json_safe({"ok": True, "calibration_id": cal_id, "point_count": len(by_id)})
-        except (KeyError, TypeError, ValueError) as exc:
+            return to_json_safe({"ok": True, "calibration_id": cal_id, "point_count": len(by_id), "certificate_sha256": cert_hash})
+        except (KeyError, TypeError, ValueError, OSError) as exc:
             return to_json_safe({"ok": False, "error": f"Invalid import data: {exc}"})
         finally:
             conn.close()

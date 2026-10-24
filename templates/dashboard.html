@@ -341,6 +341,7 @@
 
 <!-- Master Fleet Data Table -->
 <form method="post" action="{{ url_for('report_generate') }}" id="report-form">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="table-container" id="masterTableContainer">
     <div class="table-scroll">
       <table class="sortable fleet-table">

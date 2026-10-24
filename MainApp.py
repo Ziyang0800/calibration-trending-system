@@ -17,10 +17,15 @@ import time
 import uuid
 import webbrowser
 import zipfile
+import secrets
+from urllib.parse import urlparse
+from pathlib import Path
+from werkzeug.utils import secure_filename
+from service import CalibrationService
 from datetime import date, datetime
 from flask import jsonify
 
-from flask import Flask, render_template, send_file, abort, redirect, url_for, request
+from flask import Flask, render_template, send_file, abort, redirect, url_for, request, session
 
 from db import (
     connect, update_asset, delete_asset, get_calibration, 
@@ -51,6 +56,50 @@ def app_dir() -> str:
 
 app = Flask(__name__, template_folder=resource_path("templates"), static_folder=resource_path("static"))
 app.config["DB_PATH"] = os.path.join(app_dir(), "calibration.db")
+app.secret_key = secrets.token_hex(32)
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Strict", MAX_CONTENT_LENGTH=32 * 1024 * 1024)
+
+
+def csrf_token():
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_hex(32)
+    return session["csrf_token"]
+
+
+app.jinja_env.globals["csrf_token"] = csrf_token
+
+
+@app.before_request
+def protect_local_application():
+    if request.remote_addr not in ("127.0.0.1", "::1"):
+        abort(403, "This application accepts local connections only.")
+    if urlparse("http://" + request.host).hostname not in ("127.0.0.1", "localhost", "::1"):
+        abort(403, "Untrusted application host.")
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token", "")
+        expected = session.get("csrf_token")
+        if not expected or not secrets.compare_digest(str(token), expected):
+            abort(403, "The form expired. Reload the page and try again.")
+        origin = request.headers.get("Origin")
+        if origin and (urlparse(origin).scheme != "http" or urlparse(origin).hostname not in ("127.0.0.1", "localhost", "::1")):
+            abort(403, "Cross-origin writes are not permitted.")
+
+
+def desktop_service():
+    # Share validation without starting desktop background backups in the web server.
+    svc = CalibrationService.__new__(CalibrationService)
+    svc.db_path = app.config["DB_PATH"]
+    return svc
+
+
+def pending_path(token):
+    if not isinstance(token, str) or not re.fullmatch(r"[a-f0-9]{32}", token):
+        raise ValueError("Invalid or expired upload token.")
+    path = (Path(PENDING_DIR) / (token + ".pdf")).resolve()
+    if path.parent != Path(PENDING_DIR).resolve():
+        raise ValueError("Invalid upload path.")
+    return path
+
 
 EXPORTS_DIR = os.path.join(app_dir(), "exports")
 REPORTS_DIR = os.path.join(app_dir(), "reports")
@@ -58,12 +107,7 @@ CERTS_DIR = os.path.join(app_dir(), "certs")
 ATTACHMENTS_DIR = os.path.join(app_dir(), "attachments")
 PENDING_DIR = os.path.join(app_dir(), "pending_imports")
 
-os.makedirs(CERTS_DIR, exist_ok=True)
-os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
-os.makedirs(PENDING_DIR, exist_ok=True)
-os.makedirs(REPORTS_DIR, exist_ok=True)
-os.makedirs(EXPORTS_DIR, exist_ok=True)
-_setup_logging()
+
 
 
 def _decimals_for(nominal: float) -> int:
@@ -101,6 +145,13 @@ def get_conn():
 # -----------------------------------------------------------------------------
 # REST API Endpoints for Next.js / shadcn/ui Frontend
 # -----------------------------------------------------------------------------
+@app.route("/api/csrf", methods=["GET"])
+def api_csrf():
+    response = jsonify({"csrf_token": csrf_token()})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.route("/api/dashboard", methods=["GET"])
 def api_dashboard():
     conn = get_conn()
@@ -516,67 +567,38 @@ def calibration_edit(calibration_id):
     } for r in tp_rows]
 
     if request.method == "POST":
-        uploaded = request.files.get("reviewer_attachment")
-        attachment_path = None
-        keep_existing = True
-        if uploaded and uploaded.filename:
-            keep_existing = False
-            safe_name = f"{calibration_id}_{uuid.uuid4().hex[:8]}_{uploaded.filename}"
-            attachment_path = os.path.join(ATTACHMENTS_DIR, safe_name)
-            uploaded.save(attachment_path)
-        elif request.form.get("remove_attachment") == "on":
-            keep_existing = False
-            existing = get_calibration(conn, calibration_id)
-            if existing and existing["reviewer_attachment_path"] and os.path.exists(existing["reviewer_attachment_path"]):
-                os.remove(existing["reviewer_attachment_path"])
-            attachment_path = None
-
-        pressure_raw = request.form.get("pressure_hpa", "").strip()
-        pressure_val = float(pressure_raw) if pressure_raw else None
-        loc_val = request.form.get("location", "").strip() or None
-        is_adj_val = request.form.get("is_adjusted") == "on"
-
-        primary_meas_str = request.form.get("measured_value")
-        if not primary_meas_str and test_point_readings:
-            primary_meas_str = request.form.get(f"tp_meas_{test_point_readings[0]['tp_id']}", "0")
-        primary_meas = float(primary_meas_str) if primary_meas_str else 0.0
-
-        mu_str = request.form.get("mu_relative", "0").strip()
-        mu_val = float(mu_str) if mu_str else 0.0
-
-        ok, error = update_calibration(
-            conn, calibration_id,
-            cal_date=request.form["cal_date"],
-            measured_value=primary_meas,
-            mu_relative=mu_val,
-            reviewer_comment=request.form.get("reviewer_comment", "").strip() or None,
-            excluded_from_regression=request.form.get("excluded_from_regression") == "on",
-            reviewer_attachment_path=attachment_path,
-            keep_existing_attachment=keep_existing,
-            reviewer_url=request.form.get("reviewer_url", "").strip() or None,
-            pressure_hpa=pressure_val,
-            is_adjusted=is_adj_val,
-            location=loc_val,
-        )
-
-        # Save all individual test point readings directly to calibration_readings!
-        if ok and test_point_readings:
-            for tpr in test_point_readings:
-                field_name = f"tp_meas_{tpr['tp_id']}"
-                if field_name in request.form:
-                    val = float(request.form[field_name])
-                    conn.execute(
-                        "UPDATE calibration_readings SET measured_value = ? WHERE calibration_id = ? AND test_point_id = ?",
-                        (val, calibration_id, tpr["tp_id"])
-                    )
-
-        cal = get_calibration(conn, calibration_id)
-        if ok:
-            conn.commit()
-            conn.close()
-            return redirect(url_for("asset_detail", asset_id=cal["asset_id"]))
         conn.close()
-        return render_template("calibration_edit.html", cal=cal, error=error, test_point_readings=test_point_readings)
+        data = {"id": calibration_id}
+        for key in ("cal_date", "cert_number", "measured_value", "mu_relative", "reviewer_comment", "pressure_hpa", "location"):
+            if key in request.form:
+                data[key] = request.form[key]
+        data["is_adjusted"] = request.form.get("is_adjusted") == "on"
+        data["excluded_from_regression"] = request.form.get("excluded_from_regression") == "on"
+        data["test_point_readings"] = [
+            {"tp_id": point["tp_id"], "measured_value": request.form[f"tp_meas_{point['tp_id']}"]}
+            for point in test_point_readings if f"tp_meas_{point['tp_id']}" in request.form
+        ]
+        uploaded = request.files.get("reviewer_attachment")
+        data["reviewer_url"] = request.form.get("reviewer_url", "").strip() or None
+        new_attachment = None
+        if uploaded and uploaded.filename:
+            safe_name = secure_filename(uploaded.filename)
+            if not safe_name:
+                abort(400, "Invalid attachment filename.")
+            Path(ATTACHMENTS_DIR).mkdir(parents=True, exist_ok=True)
+            new_attachment = Path(ATTACHMENTS_DIR) / f"{calibration_id}_{uuid.uuid4().hex}_{safe_name}"
+            uploaded.save(new_attachment)
+            data["reviewer_attachment_path"] = str(new_attachment.resolve())
+        elif request.form.get("remove_attachment") == "on":
+            # Unlink from the record; retain the original file for recovery.
+            data["reviewer_attachment_path"] = None
+        result = desktop_service().save_calibration_edit(data)
+        if not result["ok"] and new_attachment is not None:
+            new_attachment.unlink(missing_ok=True)
+        cal = desktop_service().get_calibration_for_edit(calibration_id)
+        if result["ok"]:
+            return redirect(url_for("asset_detail", asset_id=cal["asset_id"]))
+        return render_template("calibration_edit.html", cal=cal, error=result.get("error"), test_point_readings=test_point_readings), 400
 
     cal = get_calibration(conn, calibration_id)
     conn.close()
@@ -611,6 +633,7 @@ def _parse_one_cert(uploaded, conn) -> dict:
     original_filename = uploaded.filename
     token = uuid.uuid4().hex
     temp_path = os.path.join(PENDING_DIR, f"{token}.pdf")
+    Path(PENDING_DIR).mkdir(parents=True, exist_ok=True)
     uploaded.save(temp_path)
 
     try:
@@ -679,82 +702,59 @@ def import_parse():
 
 @app.route("/import/confirm", methods=["POST"])
 def import_confirm():
-    row_count = int(request.form["row_count"])
-    conn = get_conn()
+    try:
+        row_count = int(request.form["row_count"])
+        if not 0 <= row_count <= 100:
+            raise ValueError("Invalid upload count.")
+    except (KeyError, ValueError):
+        abort(400, "Invalid upload count.")
     summary = []
     last_asset_id = None
-
+    svc = desktop_service()
     for i in range(row_count):
-        token = request.form.get(f"token_{i}")
-        temp_path = os.path.join(PENDING_DIR, f"{token}.pdf") if token else None
-
-        if request.form.get(f"include_{i}") != "on":
-            if temp_path and os.path.exists(temp_path):
-                os.remove(temp_path)
-            continue
-
-        if not temp_path or not os.path.exists(temp_path):
-            summary.append({"filename": request.form.get(f"filename_{i}", f"Row {i+1}"), "status": "error", "detail": "Upload expired."})
-            continue
-
-        filename_display = request.form.get(f"filename_{i}", f"Row {i+1}")
-        asset_serial = request.form.get(f"serial_{i}", "").strip()
-        cal_date_str = request.form.get(f"cal_date_{i}", "").strip()
-        measured_str = request.form.get(f"measured_value_{i}", "").strip()
-        mu_str = request.form.get(f"mu_relative_{i}", "").strip()
-        cert_number = request.form.get(f"cert_number_{i}") or None
-
-        if not (asset_serial and cal_date_str and measured_str and mu_str):
-            os.remove(temp_path)
-            summary.append({"filename": filename_display, "status": "error", "detail": "Required fields left blank."})
-            continue
-
-        asset_row = conn.execute("SELECT id FROM assets WHERE serial = ?", (asset_serial,)).fetchone()
-        if not asset_row:
-            os.remove(temp_path)
-            summary.append({"filename": filename_display, "status": "error", "detail": f"Serial {asset_serial} not found in database."})
-            continue
-        asset_id = asset_row[0]
-
+        filename = request.form.get(f"filename_{i}", f"Row {i+1}")
         try:
-            measured_value = float(measured_str)
-            mu_relative = float(mu_str)
-            date.fromisoformat(cal_date_str)
-        except ValueError:
-            os.remove(temp_path)
-            summary.append({"filename": filename_display, "status": "error", "detail": "Invalid number or date format."})
-            continue
-
-        permanent_name = f"{asset_serial}_{cal_date_str}_{token[:8]}.pdf"
-        permanent_path = os.path.join(CERTS_DIR, permanent_name)
-
-        inserted = insert_calibration(
-            conn, asset_id, cal_date=cal_date_str, measured_value=measured_value, mu_relative=mu_relative,
-            source="pdf_import", cert_number=cert_number, cert_pdf_path=permanent_path,
-        )
-        if inserted:
-            shutil.move(temp_path, permanent_path)
-            summary.append({"filename": filename_display, "status": "imported", "detail": f"{asset_serial} — {cal_date_str}"})
-            last_asset_id = asset_id
-        else:
-            os.remove(temp_path)
-            summary.append({"filename": filename_display, "status": "duplicate", "detail": f"{asset_serial} on {cal_date_str} already recorded."})
-
-    conn.commit()
-    conn.close()
-
+            temporary = pending_path(request.form.get(f"token_{i}"))
+            if request.form.get(f"include_{i}") != "on":
+                temporary.unlink(missing_ok=True)
+                continue
+            if not temporary.is_file():
+                raise ValueError("Upload expired.")
+            conn = get_conn()
+            try:
+                asset = conn.execute("SELECT id FROM assets WHERE serial = ?",
+                    (request.form.get(f"serial_{i}", "").strip(),)).fetchone()
+            finally:
+                conn.close()
+            if not asset:
+                raise ValueError("The serial number is not registered.")
+            result = svc.commit_imported_certificate({
+                "asset_id": asset[0], "cal_date": request.form.get(f"cal_date_{i}", ""),
+                "measured_value": request.form.get(f"measured_value_{i}"),
+                "mu_relative": request.form.get(f"mu_relative_{i}"),
+                "cert_number": request.form.get(f"cert_number_{i}"), "pdf_path": str(temporary),
+            })
+            if result["ok"]:
+                temporary.unlink(missing_ok=True)
+                last_asset_id = asset[0]
+                summary.append({"filename": filename, "status": "imported", "detail": "Verified scalar calibration archived and imported."})
+            else:
+                summary.append({"filename": filename, "status": "error", "detail": result.get("error")})
+        except (ValueError, OSError) as exc:
+            summary.append({"filename": filename, "status": "error", "detail": str(exc)})
     return render_template("import_result.html", summary=summary, last_asset_id=last_asset_id)
 
 
 @app.route("/import/cancel", methods=["POST"])
 def import_cancel():
-    row_count = int(request.form.get("row_count", 1))
-    for i in range(row_count):
-        token = request.form.get(f"token_{i}")
-        if token:
-            temp_path = os.path.join(PENDING_DIR, f"{token}.pdf")
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+    try:
+        row_count = int(request.form.get("row_count", 1))
+        if not 0 <= row_count <= 100:
+            raise ValueError("Invalid upload count.")
+        for i in range(row_count):
+            pending_path(request.form.get(f"token_{i}")).unlink(missing_ok=True)
+    except (ValueError, OSError):
+        abort(400, "Invalid upload token or count.")
     return redirect(url_for("import_form"))
 
 
@@ -769,6 +769,9 @@ def _open_browser_soon(url: str):
 
 
 def main():
+    for folder in (CERTS_DIR, ATTACHMENTS_DIR, PENDING_DIR, REPORTS_DIR, EXPORTS_DIR):
+        os.makedirs(folder, exist_ok=True)
+    _setup_logging()
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default=None)
     ap.add_argument("--port", type=int, default=5000)
@@ -778,9 +781,11 @@ def main():
     args = ap.parse_args()
 
     if args.db:
-        app.config["DB_PATH"] = args.db
+        app.config["DB_PATH"] = str(Path(args.db).resolve())
 
-    host = "0.0.0.0" if args.network else "127.0.0.1"
+    if args.network:
+        ap.error("Network serving is disabled. Run this application locally.")
+    host = "127.0.0.1"
     browser_url = f"http://127.0.0.1:{args.port}"
 
     print(f"Calibration Trending running at {browser_url}")

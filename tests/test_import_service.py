@@ -27,8 +27,10 @@ def test_multi_point_import_writes_all_readings_atomically(svc_and_db):
     tp2 = db.upsert_test_point(conn, aid, "20 kHz", "Ratio", 10.0, "Ratio", 2)
     conn.close()
 
+    pdf = Path(db_path).parent / "certificate.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n%%EOF")
     result = svc.commit_imported_certificate({
-        "asset_id": aid, "cal_date": "2026-10-20", "pdf_path": "certificate.pdf",
+        "asset_id": aid, "cal_date": "2026-10-20", "pdf_path": str(pdf),
         "readings": [
             {"test_point_id": tp1, "measured_value": 10.0001, "uncertainty": 12.5},
             {"test_point_id": tp2, "measured_value": 10.0002, "uncertainty": 13.0},

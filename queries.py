@@ -45,15 +45,16 @@ def list_assets(conn) -> List[Dict[str, Any]]:
             (asset_id,)
         ).fetchall()
 
-        if tp_rows and len(tp_rows) > 1:
+        if tp_rows:
             worst_status = "ok"
-            has_enough = False
+            all_enough = True
             last_date = None
             last_val = None
+            latest_event = conn.execute("SELECT MAX(cal_date) FROM calibrations WHERE asset_id=?", (asset_id,)).fetchone()[0]
 
             for tp_id, tp_nom, tp_name in tp_rows:
                 readings = conn.execute(
-                    "SELECT c.cal_date, cr.measured_value, cr.excluded_from_regression, c.is_adjusted, "
+                    "SELECT c.cal_date, cr.measured_value, (cr.excluded_from_regression OR c.excluded_from_regression), c.is_adjusted, "
                     "c.reviewer_comment, c.reviewer_attachment_path, c.location "
                     "FROM calibrations c JOIN calibration_readings cr ON cr.calibration_id = c.id "
                     "WHERE c.asset_id = ? AND cr.test_point_id = ?",
@@ -65,9 +66,10 @@ def list_assets(conn) -> List[Dict[str, Any]]:
                 if readings:
                     last_date = str(to_date(readings[-1][0]))
                     last_val = readings[-1][1]
+                    if last_date != latest_event:
+                        all_enough = False
 
                 if len(readings) >= MIN_POINTS_FOR_TREND:
-                    has_enough = True
                     dates = [to_date(r[0]) for r in readings]
                     measured = [r[1] for r in readings]
                     excluded = [bool(r[2]) for r in readings]
@@ -85,6 +87,8 @@ def list_assets(conn) -> List[Dict[str, Any]]:
 
                     nom_val = tp_nom if tp_nom is not None else (measured[0] if measured else 0.0)
                     rows, stats = compute_trend(dates, measured, nom_val, excluded=excluded, adjustments=epoch_resets)
+                    if stats is None or excluded[-1]:
+                        all_enough = False
                     if rows and rows[-1]["out_of_trend"]:
                         has_rev = bool(readings[-1][4] or readings[-1][5])
                         if not has_rev:
@@ -92,8 +96,12 @@ def list_assets(conn) -> List[Dict[str, Any]]:
                         elif worst_status != "out_of_trend":
                             worst_status = "reviewed_out_of_trend"
 
+                else:
+                    all_enough = False
+
             total_cals = conn.execute("SELECT COUNT(*) FROM calibrations WHERE asset_id = ?", (asset_id,)).fetchone()[0]
-            status = worst_status if has_enough else ("ok" if total_cals >= 2 else "insufficient_data")
+            # Every configured point needs a valid current-epoch trend and a latest-event reading.
+            status = worst_status if worst_status != "ok" or all_enough else "insufficient_data"
 
             results.append({
                 "id": asset_id, "serial": serial, "model": model, "asset_number": asset_number,
@@ -142,7 +150,7 @@ def list_assets(conn) -> List[Dict[str, Any]]:
 
                 nom = nominal if nominal else (measured[0] if measured else 0.0)
                 rows, stats = compute_trend(dates, measured, nom, excluded=excluded, adjustments=epoch_resets)
-                if stats and rows:
+                if stats and rows and not excluded[-1]:
                     newest = rows[-1]
                     if newest["out_of_trend"]:
                         has_review = bool(cals[-1][4] or cals[-1][5])
@@ -202,11 +210,12 @@ def get_asset_detail(conn, asset_id: int, selected_point_id: int = None) -> Opti
     ).fetchall()
 
     test_point_list = []
+    latest_event_date = conn.execute("SELECT MAX(cal_date) FROM calibrations WHERE asset_id=?", (asset_id,)).fetchone()[0]
     for tp in raw_test_points:
         tp_id, tp_name, tp_group, tp_nom, tp_unit, tp_order = tp
 
         r_rows = conn.execute(
-            "SELECT c.cal_date, cr.measured_value, cr.uncertainty, cr.excluded_from_regression, c.is_adjusted, "
+            "SELECT c.cal_date, cr.measured_value, cr.uncertainty, (cr.excluded_from_regression OR c.excluded_from_regression), c.is_adjusted, "
             "c.reviewer_comment, c.reviewer_attachment_path, c.location "
             "FROM calibrations c JOIN calibration_readings cr ON cr.calibration_id = c.id "
             "WHERE c.asset_id = ? AND cr.test_point_id = ?",
@@ -238,7 +247,7 @@ def get_asset_detail(conn, asset_id: int, selected_point_id: int = None) -> Opti
                     drift_display = f"{drift:+.4f}"
                     drift_ppm = drift
 
-        tp_status = "ok" if len(r_rows) >= 2 else "insufficient_data"
+        tp_status = "insufficient_data"
         if len(r_rows) >= MIN_POINTS_FOR_TREND:
             tp_dates = [to_date(r[0]) for r in r_rows]
             tp_meas = [r[1] for r in r_rows]
@@ -257,6 +266,8 @@ def get_asset_detail(conn, asset_id: int, selected_point_id: int = None) -> Opti
 
             tp_nom_val = tp_nom if tp_nom is not None else (tp_meas[0] if tp_meas else 0.0)
             tp_rows_res, tp_stats = compute_trend(tp_dates, tp_meas, tp_nom_val, excluded=tp_excl, adjustments=epoch_resets)
+            if tp_stats is not None and not tp_excl[-1] and latest_date == latest_event_date:
+                tp_status = "ok"
             if tp_rows_res and tp_rows_res[-1]["out_of_trend"]:
                 has_rev = bool(r_rows[-1][5] or r_rows[-1][6])
                 tp_status = "reviewed_out_of_trend" if has_rev else "out_of_trend"
@@ -274,17 +285,18 @@ def get_asset_detail(conn, asset_id: int, selected_point_id: int = None) -> Opti
     # Load calibrations selecting BOTH raw unitless mu_relative and reading-level uncertainty
     cal_rows = []
     if active_tp_id:
+        # Never substitute the asset summary/first-point value for a missing reading
+        # on the selected test point; doing so would contaminate that point's trend.
         cal_rows = conn.execute(
             "SELECT c.id, c.cal_date, cr.measured_value, c.mu_relative, cr.uncertainty, c.source, c.cert_number, "
-            "c.cert_pdf_path, c.reviewer_comment, cr.excluded_from_regression, c.reviewer_attachment_path, "
+            "c.cert_pdf_path, c.reviewer_comment, (cr.excluded_from_regression OR c.excluded_from_regression), c.reviewer_attachment_path, "
             "c.reviewer_url, c.pressure_hpa, c.is_adjusted, c.location "
             "FROM calibrations c "
             "JOIN calibration_readings cr ON cr.calibration_id = c.id "
             "WHERE c.asset_id = ? AND cr.test_point_id = ?",
             (asset_id, active_tp_id)
         ).fetchall()
-
-    if not cal_rows:
+    else:
         cal_rows = conn.execute(
             "SELECT id, cal_date, measured_value, mu_relative, NULL, source, cert_number, cert_pdf_path, "
             "reviewer_comment, excluded_from_regression, reviewer_attachment_path, reviewer_url, "

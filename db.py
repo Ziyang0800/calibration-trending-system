@@ -14,12 +14,17 @@ CURRENT_SCHEMA_VERSION = 2
 def connect(db_path: str) -> sqlite3.Connection:
     """Connects to SQLite with WAL mode, foreign keys, and safe transactional migrations."""
     conn = sqlite3.connect(db_path, timeout=30.0)
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
-    
-    with conn:
-        _init_and_migrate(conn)
-    return conn
+    try:
+        if _get_schema_version(conn) > CURRENT_SCHEMA_VERSION:
+            raise ValueError("This database requires a newer application version.")
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        with conn:
+            _init_and_migrate(conn)
+        return conn
+    except Exception:
+        conn.close()
+        raise
 
 
 def _get_schema_version(conn: sqlite3.Connection) -> int:
@@ -161,24 +166,25 @@ def insert_calibration(conn: sqlite3.Connection, asset_id: int, cal_date: str, m
             )
             return cur.lastrowid
         except sqlite3.IntegrityError:
-            if not allow_overwrite:
-                return None  # Collision: record already exists, prevent accidental overwrite
-
+            # Only classify a real (asset_id, cal_date) collision as a duplicate.
+            # Foreign-key / NOT NULL / other integrity failures must remain visible.
             row = conn.execute(
                 "SELECT id FROM calibrations WHERE asset_id = ? AND cal_date = ?",
                 (asset_id, cal_date)
             ).fetchone()
-            if row:
-                cal_id = row[0]
-                conn.execute(
-                    "UPDATE calibrations SET measured_value = ?, mu_relative = ?, pressure_hpa = COALESCE(?, pressure_hpa), "
-                    "is_adjusted = ?, reviewer_comment = COALESCE(?, reviewer_comment), location = COALESCE(?, location), "
-                    "cert_number = COALESCE(?, cert_number), cert_pdf_path = COALESCE(?, cert_pdf_path) WHERE id = ?",
-                    (measured_value, mu_relative, pressure_hpa, int(is_adjusted), reviewer_comment, location,
-                     cert_number, cert_pdf_path, cal_id)
-                )
-                return cal_id
-            return None
+            if row is None:
+                raise
+            if not allow_overwrite:
+                return None  # Duplicate date: preserve existing data.
+            cal_id = row[0]
+            conn.execute(
+                "UPDATE calibrations SET measured_value = ?, mu_relative = ?, pressure_hpa = COALESCE(?, pressure_hpa), "
+                "is_adjusted = ?, reviewer_comment = COALESCE(?, reviewer_comment), location = COALESCE(?, location), "
+                "cert_number = COALESCE(?, cert_number), cert_pdf_path = COALESCE(?, cert_pdf_path) WHERE id = ?",
+                (measured_value, mu_relative, pressure_hpa, int(is_adjusted), reviewer_comment, location,
+                 cert_number, cert_pdf_path, cal_id)
+            )
+            return cal_id
 
 
 def upsert_test_point(conn: sqlite3.Connection, asset_id: int, point_name: str, group_name: str,

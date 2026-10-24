@@ -222,6 +222,7 @@
 {% endif %}
 
 <form method="post" action="{{ url_for('htbasic_generate') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   
   <!-- STEP 1: Select Target Station -->
   <label style="font-weight:700; font-size:13.5px; color:var(--primary); margin-bottom:8px; display:block;">

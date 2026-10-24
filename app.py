@@ -38,6 +38,15 @@ class Api:
     def import_certificate(self):
         return self._svc.import_certificate_file()
 
+    def commit_imported_certificate(self, data):
+        return self._svc.commit_imported_certificate(data)
+
+    def get_settings(self):
+        return self._svc.get_settings()
+
+    def save_settings(self, new_settings):
+        return self._svc.save_settings(new_settings)
+
     def save_report(self, asset_ids=None):
         return self._svc.save_pdf_report(asset_ids)
 
@@ -91,7 +100,40 @@ def main():
         min_size=(1240, 720),
         background_color="#f6f8fb",
     )
-    webview.start(set_window_icon, window, debug=True)
+    webview.start(set_window_icon, window, debug=False)
+
+def self_test(output_path):
+    """Validate packaged resources without opening a window or the live database."""
+    import hashlib
+    import json
+    from pathlib import Path
+    from datetime import date
+    import db
+    import trending
+    result = {"ok": False, "resources": {}, "version": Path(store.resource_path("VERSION")).read_text(encoding="utf-8").strip()}
+    try:
+        for relative in ("ui/index.html", "ui/app.js", "ui/trend-chart.js", "schema.sql"):
+            payload = Path(store.resource_path(relative)).read_bytes()
+            result["resources"][relative] = hashlib.sha256(payload).hexdigest()
+        connection = db.connect(":memory:")
+        try:
+            result["schema_version"] = connection.execute("PRAGMA user_version").fetchone()[0]
+            assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        finally:
+            connection.close()
+        rows, stats = trending.compute_trend([date(2020+i, 1, 1) for i in range(4)], [1, 1, 1, 2], 1)
+        assert stats and rows[-1]["out_of_trend"]
+        result["ok"] = True
+    except Exception as exc:
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    Path(output_path).write_text(json.dumps(result, indent=2), encoding="utf-8")
+    return 0 if result["ok"] else 1
+
 
 if __name__ == "__main__":
+    if "--self-test-output" in sys.argv:
+        index = sys.argv.index("--self-test-output")
+        if index + 1 >= len(sys.argv):
+            raise SystemExit("--self-test-output requires a JSON destination path")
+        raise SystemExit(self_test(sys.argv[index + 1]))
     main()
